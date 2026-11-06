@@ -1,0 +1,8 @@
+{
+  "name": "Gulfaro - GCC Job Classifieds Marketplace",
+  "description": "Modern job classifieds and vacancies platform for Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman with direct WhatsApp, phone, and email employer contact.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
