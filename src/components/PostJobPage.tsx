@@ -14,6 +14,7 @@ import {
   isValidJobCategoryId,
   resolveJobCategoryId
 } from '../data/categories';
+import { getCitiesForCountry } from './HeroSection';
 import { storageService } from '../services/storage';
 import {
   validateJobFieldsForExternalLinks,
@@ -252,12 +253,21 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
   const countryInfo = useMemo(() => GCC_COUNTRIES[country], [country]);
   const availableSubcategories = useMemo(() => getSubcategoriesForCategory(category), [category]);
+  const availableCities = useMemo(() => {
+    const baseCities = getCitiesForCountry(country).filter(c => c !== 'All Cities');
+    if (city && !baseCities.includes(city)) {
+      return [...baseCities, city];
+    }
+    return baseCities;
+  }, [country, city]);
 
   const handleCountryChange = (newCountry: GccCountry) => {
     const info = GCC_COUNTRIES[newCountry];
+    const newCities = getCitiesForCountry(newCountry).filter(c => c !== 'All Cities');
     setCountry(newCountry);
     setCurrency(info.currencyCode);
-    setCity(info.topCities[0]);
+    setCity(newCities[0] || info.topCities[0]);
+    clearFieldError('city');
     if (!contactPhone.trim() || contactPhone.trim().startsWith('+')) {
       const hasOnlyCode = Object.values(GCC_COUNTRIES).some(
         c => contactPhone.trim() === c.phoneCode
@@ -896,26 +906,28 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
               <div>
                 <label htmlFor="job-city" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  City *
+                  City / Region *
                 </label>
-                <input
-                  id="job-city"
-                  type="text"
-                  required
-                  list="gcc-city-suggestions"
-                  value={city}
-                  onChange={e => {
-                    setCity(e.target.value);
-                    clearFieldError('city');
-                  }}
-                  placeholder={`e.g. ${countryInfo.topCities[0]}`}
-                  className={getInputClass('city')}
-                />
-                <datalist id="gcc-city-suggestions">
-                  {countryInfo.topCities.map(c => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
+                <div className="relative flex items-center">
+                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <select
+                    id="job-city"
+                    required
+                    value={city}
+                    onChange={e => {
+                      setCity(e.target.value);
+                      clearFieldError('city');
+                    }}
+                    className={getInputClass('city', 'pl-9')}
+                  >
+                    <option value="">Select City / Region</option>
+                    {availableCities.map(c => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {renderFieldError('city')}
               </div>
 

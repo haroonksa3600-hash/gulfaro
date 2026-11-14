@@ -17,7 +17,7 @@ import {
 import { storageService } from './services/storage';
 import { fetchPublicPlatformConfig, PublicPlatformConfig } from './services/siteConfig';
 import { Navbar } from './components/Navbar';
-import { HeroSection } from './components/HeroSection';
+import { HeroSection, getCitiesForCountry, jobMatchesCityFilter } from './components/HeroSection';
 import { CountrySection } from './components/CountrySection';
 import { CategorySection } from './components/CategorySection';
 import { JobCard } from './components/JobCard';
@@ -481,9 +481,10 @@ export default function App() {
     city: string;
     category: string;
   }) => {
+    const normalizedCity = !filters.city || filters.city === 'All Cities' ? '' : filters.city;
     setSearchQuery(filters.query);
     setSelectedCountry(filters.country);
-    setSelectedCity(filters.city);
+    setSelectedCity(normalizedCity);
     setSelectedCategory(filters.category);
     setActiveTab('jobs');
     setSelectedJob(null);
@@ -528,7 +529,7 @@ export default function App() {
       .filter(job => {
         if (!isJobActiveAndUnexpired(job, nowMs)) return false;
         if (selectedCountry !== 'all' && job.country !== selectedCountry) return false;
-        if (selectedCity && job.city.toLowerCase() !== selectedCity.toLowerCase()) return false;
+        if (!jobMatchesCityFilter(job, selectedCity)) return false;
 
         if (selectedCategory && !jobMatchesCategoryFilter(job, selectedCategory)) {
           return false;
@@ -1060,9 +1061,11 @@ export default function App() {
                       className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
                     >
                       <option value="">All Cities</option>
-                      {GCC_COUNTRIES[selectedCountry].topCities.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
+                      {getCitiesForCountry(selectedCountry)
+                        .filter(c => c !== 'All Cities')
+                        .map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
                     </select>
                   </div>
                 )}
