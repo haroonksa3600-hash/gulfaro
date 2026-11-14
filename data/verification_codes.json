@@ -1,0 +1,30 @@
+[
+  {
+    "code": "626711",
+    "token": "3e74fca7656fd1f31c0928a9238b92d3cb0456aae47245ee",
+    "email": "test.recruiter@almana-group.example.com",
+    "expiresAt": 1794224994335,
+    "used": true,
+    "createdAt": 1794224094335,
+    "ip": "127.0.0.1",
+    "usedAt": 1794224095452
+  },
+  {
+    "code": "562555",
+    "token": "06f432907947cf7fe20d98041a97709738552592373b7044",
+    "email": "hr@albawani-contracting.example.com",
+    "expiresAt": 1794405124233,
+    "used": false,
+    "createdAt": 1794404224234,
+    "ip": "127.0.0.1"
+  },
+  {
+    "code": "949483",
+    "token": "f3534f4493128f3df02343562ed8f19f395d9fad5ac6e1b6",
+    "email": "haroon.ksa.3600@gmail.com",
+    "expiresAt": 1794409957108,
+    "used": false,
+    "createdAt": 1794409057108,
+    "ip": "127.0.0.1"
+  }
+]

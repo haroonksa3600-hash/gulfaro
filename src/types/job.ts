@@ -95,7 +95,7 @@ export const GCC_COUNTRIES: Record<GccCountry, CountryInfo> = {
   }
 };
 
-export type EmploymentType = 'full-time' | 'contract' | 'part-time' | 'remote' | 'walk-in';
+export type EmploymentType = 'full-time' | 'contract' | 'part-time' | 'temporary' | 'remote' | 'walk-in';
 
 export type IqamaStatus =
   | 'transferable'
@@ -114,7 +114,7 @@ export type ExperienceLevel =
 
 export type CompanyType = 'direct-employer' | 'recruitment-agency' | 'confidential';
 
-export type AdStatus = 'active' | 'pending' | 'expired' | 'rejected';
+export type AdStatus = 'active' | 'pending' | 'expired' | 'rejected' | 'hidden' | 'closed';
 export type AdPackage = 'standard' | 'featured' | 'sponsored';
 
 export interface JobAd {
@@ -129,15 +129,20 @@ export interface JobAd {
   category: string;
   subcategory?: string;
   employmentType: EmploymentType;
+  vacanciesCount?: number;
   workMode: 'on-site' | 'hybrid' | 'remote';
   salaryMin?: number;
   salaryMax?: number;
+  salaryDisplay?: string;
   salaryNegotiable: boolean;
   currency: string;
   salaryPeriod: 'monthly' | 'yearly' | 'daily';
   description: string;
+  responsibilities?: string[];
+  skills?: string[];
   requirements: string[];
   benefits: string[];
+  howToApply?: 'email';
   iqamaRequirement: IqamaStatus;
   drivingLicenseRequired: boolean;
   genderPreference: 'any' | 'male' | 'female';
@@ -161,6 +166,7 @@ export interface JobAd {
   viewsCount: number;
   inquiriesCount: number;
   userId: string;
+  isEmployerVerified?: boolean;
   rejectionReason?: string;
 }
 
@@ -171,15 +177,26 @@ export interface User {
   password?: string;
   role: 'job_seeker' | 'employer' | 'admin';
   companyName?: string;
+  hiringOrgName?: string;
   companyType?: CompanyType;
   phone?: string;
   whatsapp?: string;
   country: GccCountry;
   city: string;
   headline?: string;
+  professionalTitle?: string;
   bio?: string;
   iqamaStatus?: IqamaStatus;
   experienceYears?: string;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string;
+  accessKey?: string; // 5-digit numeric PIN for account recovery
+  accessKeyHash?: string;
+  failedAttempts?: number;
+  lockoutUntil?: number | null;
+  status?: 'active' | 'suspended' | 'banned' | 'deactivated' | 'pending_deletion';
+  postingRestricted?: boolean;
+  isFeaturedEmployer?: boolean;
   createdAt: string;
 }
 

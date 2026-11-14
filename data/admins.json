@@ -1,0 +1,23 @@
+[
+  {
+    "id": "sa-owner-1",
+    "username": "Haroon555",
+    "email": "admingulfaro@gmail.com",
+    "fullName": "Muhammad Haroon (Founder & Owner)",
+    "passwordHash": "$2b$12$eRtLRwyaLomRSSCyPcwis.jvDxEKfrv5QFHVaT1CEQvmXZ5GXjS.2",
+    "role": "owner",
+    "permissions": [
+      "*"
+    ],
+    "isOwner": true,
+    "status": "active",
+    "twoFactorEnabled": false,
+    "twoFactorMethod": "totp",
+    "failedAttempts": 0,
+    "lockoutUntil": null,
+    "createdAt": "2026-11-13T01:32:49.273Z",
+    "updatedAt": "2026-11-13T01:32:49.273Z",
+    "lastLoginAt": "2026-11-13T19:42:58.800Z",
+    "lastLoginIp": "127.0.0.1"
+  }
+]

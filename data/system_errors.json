@@ -1,0 +1,9 @@
+[
+  {
+    "level": "security",
+    "source": "SuperAdminAuth",
+    "message": "Super Admin login lockout triggered for \"temp_mod_verify\" from IP 127.0.0.1",
+    "id": "err-1794533585367-a9bd",
+    "createdAt": "2026-11-13T01:33:05.367Z"
+  }
+]

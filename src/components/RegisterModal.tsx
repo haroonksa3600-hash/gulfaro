@@ -22,7 +22,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [city, setCity] = useState(GCC_COUNTRIES['saudi-arabia'].topCities[0]);
   const [phone, setPhone] = useState('+966 ');
   const [whatsapp, setWhatsapp] = useState('+966 ');
+  const [password, setPassword] = useState('');
   const [headline, setHeadline] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -33,24 +36,44 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setWhatsapp(GCC_COUNTRIES[c].phoneCode + ' ');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
     if (!name.trim() || !email.trim()) return;
 
-    const newUser = storageService.registerCustomUser({
-      name,
-      email,
-      role,
-      companyName: role === 'employer' ? companyName : undefined,
-      country,
-      city,
-      phone,
-      whatsapp,
-      headline: headline.trim() || (role === 'employer' ? `Recruiter at ${companyName || 'Company'}` : 'Qualified GCC Professional')
-    });
+    if (password && password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long.');
+      return;
+    }
 
-    onUserRegistered(newUser);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      const res = await storageService.registerUserAsync({
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        password: password || 'password123',
+        role,
+        companyName: role === 'employer' ? companyName.trim() : undefined,
+        country,
+        city,
+        phone: phone.trim(),
+        whatsapp: whatsapp.trim(),
+        headline: headline.trim() || (role === 'employer' ? `Recruiter at ${companyName || 'Company'}` : 'Qualified GCC Professional')
+      });
+
+      if (!res.success || !res.user) {
+        setErrorMsg(res.error || 'Registration failed.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      onUserRegistered(res.user);
+      onClose();
+    } catch {
+      setErrorMsg('An unexpected error occurred during registration.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -103,7 +126,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Tariq Al-Otaibi"
+              placeholder="Muhammad Haroon"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-500 text-xs"
             />
           </div>
@@ -129,7 +152,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
+              placeholder="admingulfaro@gmail.com"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-500 text-xs"
             />
           </div>
@@ -190,6 +213,19 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           </div>
 
           <div>
+            <label className="block font-bold text-slate-700 mb-1">Create Password *</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-500 text-xs"
+            />
+          </div>
+
+          <div>
             <label className="block font-bold text-slate-700 mb-1">Professional Headline / Bio</label>
             <input
               type="text"
@@ -200,12 +236,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             />
           </div>
 
+          {errorMsg && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition-colors"
+              disabled={isSubmitting}
+              className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-2"
             >
-              Complete Registration & Sign In
+              <span>{isSubmitting ? 'Registering Account...' : 'Complete Registration & Sign In'}</span>
             </button>
           </div>
         </form>

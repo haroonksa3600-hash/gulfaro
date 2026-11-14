@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { GccCountry, GCC_COUNTRIES, JobAd, User, EmploymentType, IqamaStatus, ExperienceLevel } from './types/job';
-import { JOB_CATEGORIES } from './data/categories';
+import { GccCountry, GCC_COUNTRIES, JobAd, User } from './types/job';
+import {
+  PUBLIC_JOB_CATEGORIES,
+  findCountryMetaBySlug,
+  findCategoryMetaBySlug,
+  isJobActiveAndUnexpired
+} from './data/gccDirectory';
+import { jobMatchesCategoryFilter, getJobCategoryName } from './data/categories';
+import { findArticleBySlug } from './data/careerArticles';
+import {
+  applyRouteSeo,
+  buildArticleSchema,
+  buildJobPostingSchema,
+  buildOrganizationSchema
+} from './utils/seo';
 import { storageService } from './services/storage';
+import { fetchPublicPlatformConfig, PublicPlatformConfig } from './services/siteConfig';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { CountrySection } from './components/CountrySection';
@@ -9,52 +23,75 @@ import { CategorySection } from './components/CategorySection';
 import { JobCard } from './components/JobCard';
 import { JobCompactRow } from './components/JobCompactRow';
 import { JobDetailView } from './components/JobDetailView';
+import { CountryPortalPage } from './components/CountryPortalPage';
+import { CategoryPortalPage } from './components/CategoryPortalPage';
+import { CareerResourcesPage } from './components/CareerResourcesPage';
+import { PublicInfoPages, PublicInfoRouteType } from './components/PublicInfoPages';
+import { HomepageEditorialSections } from './components/HomepageEditorialSections';
+import { PostJobPage } from './components/PostJobPage';
 import { PostJobModal } from './components/PostJobModal';
 import { UserDashboard } from './components/UserDashboard';
-import { AdminDashboard } from './components/AdminDashboard';
+import { SuperAdminPortal } from './components/super-admin/SuperAdminPortal';
 import { SafetyGuideModal } from './components/SafetyGuideModal';
 import { RegisterModal } from './components/RegisterModal';
 import { AuthPage } from './components/AuthPage';
+import { ForgotPasswordPage } from './components/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/ResetPasswordPage';
 import { AdBanner } from './components/AdBanner';
 import { LegalModal, CookieConsentBanner } from './components/LegalModals';
 import { Footer } from './components/Footer';
-import { 
-  Filter, 
-  LayoutGrid, 
-  List, 
-  Search, 
-  X, 
-  ArrowUpDown, 
-  Sparkles, 
-  Zap, 
+import { JobNotFoundView } from './components/JobNotFoundView';
+import { ManageJobsView } from './components/ManageJobsView';
+import { UnauthorizedView } from './components/UnauthorizedView';
+import { usePWAInstall } from './hooks/usePWAInstall';
+import { PWAInstallModal } from './components/PWAInstallModal';
+import {
+  Filter,
+  LayoutGrid,
+  List,
   RotateCcw,
   SlidersHorizontal,
-  ChevronDown,
-  Building,
-  CheckCircle2,
-  Calendar,
-  MessageCircle,
-  HelpCircle
+  Zap,
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
-  // Core State
+  const {
+    isInstalled: isPWAInstalled,
+    hasNativePrompt,
+    isIOS,
+    isAndroid,
+    isModalOpen: isInstallModalOpen,
+    openModal: openInstallModal,
+    closeModal: closeInstallModal,
+    promptInstall
+  } = usePWAInstall();
+
   const [jobs, setJobs] = useState<JobAd[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(storageService.getCurrentUser());
   const [savedJobIds, setSavedJobIds] = useState<string[]>(storageService.getSavedJobIds());
-  
-  // Navigation & View State
-  const [activeTab, setActiveTab] = useState<'jobs' | 'dashboard' | 'admin' | 'safety' | 'countries' | 'auth'>('jobs');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [currentPath, setCurrentPath] = useState<string>(
+    typeof window !== 'undefined' ? window.location.pathname : '/'
+  );
+
+  // Job Detail / Not Found State
   const [selectedJob, setSelectedJob] = useState<JobAd | null>(null);
+  const [jobNotFoundSlug, setJobNotFoundSlug] = useState<string | null>(null);
+  const [isJobLoading, setIsJobLoading] = useState(false);
+
+  // Navigation & View State
+  const [activeTab, setActiveTab] = useState<'jobs' | 'dashboard' | 'safety' | 'countries' | 'auth' | 'my-jobs'>('jobs');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  // Modals
+  // Modals & CMS State
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<JobAd | null>(null);
   const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | null>(null);
+  const [publicConfig, setPublicConfig] = useState<PublicPlatformConfig | null>(null);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,50 +106,338 @@ export default function App() {
   const [filterFeaturedOnly, setFilterFeaturedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'salary-high' | 'urgent' | 'expiring'>('recent');
 
-  // Load initial data and handle URL query params for SEO deep links
+  const extractJobSlugOrId = (pathnameArg?: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const pathname = pathnameArg ?? window.location.pathname;
+      const search = window.location.search;
+      const hash = window.location.hash;
+
+      const pathMatch = pathname.match(/^\/jobs?\/([^/?#]+)/i);
+      if (pathMatch && pathMatch[1]) {
+        const candidate = decodeURIComponent(pathMatch[1]).trim();
+        if (candidate && candidate !== 'all') return candidate;
+      }
+
+      if (search) {
+        const params = new URLSearchParams(search);
+        const queryJob = params.get('job') || params.get('id') || params.get('ref');
+        if (queryJob) return decodeURIComponent(queryJob).trim();
+      }
+
+      if (hash) {
+        const hashClean = hash.replace(/^#\/?/, '');
+        const hashPathMatch = hashClean.match(/^jobs?\/([^/?#&]+)/i);
+        if (hashPathMatch && hashPathMatch[1]) {
+          return decodeURIComponent(hashPathMatch[1]).trim();
+        }
+        const hashParams = new URLSearchParams(hashClean.includes('?') ? hashClean.split('?')[1] : hashClean);
+        const hashJob = hashParams.get('job') || hashParams.get('id');
+        if (hashJob) return decodeURIComponent(hashJob).trim();
+      }
+    } catch (err) {
+      console.warn('Error parsing job URL:', err);
+    }
+    return null;
+  };
+
+  const resolveJobRoute = async (slugOrId: string) => {
+    setIsJobLoading(true);
+    setJobNotFoundSlug(null);
+
+    let found = storageService.getJobBySlug(slugOrId);
+    if (!found) {
+      found = (await storageService.fetchJob(slugOrId)) || undefined;
+    }
+
+    setIsJobLoading(false);
+
+    if (found) {
+      setSelectedJob(found);
+      setJobNotFoundSlug(null);
+      setActiveTab('jobs');
+    } else {
+      setSelectedJob(null);
+      setJobNotFoundSlug(slugOrId);
+      setActiveTab('jobs');
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = async () => {
+      const pathname = window.location.pathname;
+      setCurrentPath(pathname);
+
+      const slugOrId = extractJobSlugOrId(pathname);
+      if (slugOrId) {
+        await resolveJobRoute(slugOrId);
+      } else {
+        setSelectedJob(null);
+        setJobNotFoundSlug(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', normalized);
+      setCurrentPath(normalized);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    const jobSlug = extractJobSlugOrId(normalized);
+    if (jobSlug) {
+      resolveJobRoute(jobSlug);
+    } else {
+      setSelectedJob(null);
+      setJobNotFoundSlug(null);
+      if (activeTab === 'auth' || activeTab === 'dashboard' || activeTab === 'my-jobs' || activeTab === 'countries') {
+        setActiveTab('jobs');
+      }
+    }
+  };
+
   useEffect(() => {
     const allJobs = storageService.getJobs();
     setJobs(allJobs);
     setSavedJobIds(storageService.getSavedJobIds());
 
-    // Check URL parameters (e.g. ?job=GF-901 or ?country=saudi-arabia)
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const jobSlugOrId = params.get('job');
-      const countryParam = params.get('country') as GccCountry | null;
-      const catParam = params.get('category');
-
-      if (jobSlugOrId) {
-        const found = allJobs.find(j => j.slug === jobSlugOrId || j.id === jobSlugOrId);
-        if (found) {
-          setSelectedJob(found);
+    fetchPublicPlatformConfig().then(cfg => {
+      if (cfg) {
+        setPublicConfig(cfg);
+        if (cfg.adsense) {
+          storageService.updateAdSenseConfig(cfg.adsense);
         }
       }
+    });
 
-      if (countryParam && GCC_COUNTRIES[countryParam]) {
-        setSelectedCountry(countryParam);
-      }
+    storageService.syncWithServer()
+      .then(updated => setJobs(updated))
+      .catch(() => {});
+    storageService.syncUsersWithServer().catch(() => {});
 
-      if (catParam) {
-        setSelectedCategory(catParam);
+    const slugOrId = extractJobSlugOrId();
+    if (slugOrId) {
+      resolveJobRoute(slugOrId);
+    } else {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const countryParam = params.get('country') as GccCountry | null;
+        const catParam = params.get('category');
+        if (countryParam && GCC_COUNTRIES[countryParam]) setSelectedCountry(countryParam);
+        if (catParam) setSelectedCategory(catParam);
+      } catch {
+        // Ignore query error
       }
-    } catch (e) {
-      console.error(e);
     }
   }, []);
 
-  // Sync jobs from storage whenever needed
+  // Route-aware SEO & JSON-LD synchronization
+  useEffect(() => {
+    const cleanPath = currentPath.split('?')[0].replace(/\/+$/, '') || '/';
+
+    if (selectedJob) {
+      const countryName = GCC_COUNTRIES[selectedJob.country]?.name || 'GCC';
+      const active = isJobActiveAndUnexpired(selectedJob);
+      applyRouteSeo({
+        title: `${selectedJob.title} – ${selectedJob.company} (${selectedJob.city}, ${countryName}) | Gulfaro`,
+        description: (selectedJob.description || '').replace(/\s+/g, ' ').slice(0, 155),
+        canonicalPath: `/job/${selectedJob.slug || selectedJob.id}`,
+        robots: active ? 'index, follow' : 'noindex, follow',
+        ogType: 'article',
+        jsonLd: active ? buildJobPostingSchema(selectedJob) : null
+      });
+      return;
+    }
+
+    if (cleanPath === '/countries') {
+      applyRouteSeo({
+        title: 'GCC Country Job Portals — Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman | Gulfaro',
+        description: 'Browse verified direct-employer job openings and labor guides across Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman.',
+        canonicalPath: '/countries',
+        jsonLd: buildOrganizationSchema()
+      });
+      return;
+    }
+
+    if (cleanPath.startsWith('/country/')) {
+      const slug = cleanPath.replace('/country/', '');
+      const meta = findCountryMetaBySlug(slug);
+      if (meta) {
+        applyRouteSeo({
+          title: `Jobs in ${meta.name} (${meta.shortName}) | Gulfaro GCC Career Portal`,
+          description: meta.overview.slice(0, 158),
+          canonicalPath: `/country/${meta.slug}`,
+          jsonLd: buildOrganizationSchema()
+        });
+        return;
+      }
+    }
+
+    if (cleanPath === '/categories') {
+      applyRouteSeo({
+        title: 'All 30 GCC Job Categories | Accounting, Engineering, IT, Healthcare & More | Gulfaro',
+        description: 'Browse active vacancies across 30 Gulf job sectors including Accounting, Engineering, Construction, IT, Healthcare, Oil & Gas, Hospitality, Logistics, and more.',
+        canonicalPath: '/categories',
+        jsonLd: buildOrganizationSchema()
+      });
+      return;
+    }
+
+    if (cleanPath.startsWith('/category/')) {
+      const slug = cleanPath.replace('/category/', '');
+      const cat = findCategoryMetaBySlug(slug);
+      if (cat) {
+        applyRouteSeo({
+          title: `${cat.name} Jobs in Saudi Arabia, UAE & GCC | Gulfaro`,
+          description: cat.overview.slice(0, 158),
+          canonicalPath: `/category/${cat.slug}`,
+          jsonLd: buildOrganizationSchema()
+        });
+        return;
+      }
+    }
+
+    if (cleanPath === '/career-advice') {
+      applyRouteSeo({
+        title: 'GCC Career Advice, CV Writing & Interview Preparation Guides | Gulfaro',
+        description: 'Original articles covering how to find jobs in Saudi Arabia and the UAE, professional CV formatting, common interview answers, and GCC labor contract basics.',
+        canonicalPath: '/career-advice',
+        jsonLd: buildOrganizationSchema()
+      });
+      return;
+    }
+
+    if (cleanPath.startsWith('/career-advice/')) {
+      const slug = cleanPath.replace('/career-advice/', '');
+      const art = findArticleBySlug(slug);
+      if (art) {
+        applyRouteSeo({
+          title: `${art.title} | Gulfaro Career Advice`,
+          description: art.summary.slice(0, 158),
+          canonicalPath: `/career-advice/${art.slug}`,
+          ogType: 'article',
+          jsonLd: buildArticleSchema(art)
+        });
+        return;
+      }
+    }
+
+    const staticSeo: Record<string, { title: string; description: string }> = {
+      '/about': {
+        title: 'About Gulfaro — Direct GCC Job Portal & Career Resources',
+        description: 'Learn how Gulfaro connects employers and job seekers across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman with transparent hiring rules.'
+      },
+      '/contact': {
+        title: 'Contact Gulfaro — Support & Trust Desk',
+        description: 'Reach Gulfaro administration by official email or submit an inquiry regarding job listings, employer verification, or privacy requests.'
+      },
+      '/privacy-policy': {
+        title: 'Privacy Policy & Google AdSense Advertising Disclosure | Gulfaro',
+        description: 'Read Gulfaro’s Privacy Policy covering account data protection, cookies, regional compliance, and third-party Google AdSense advertising disclosures.'
+      },
+      '/terms': {
+        title: 'Terms and Conditions | Gulfaro GCC Job Portal',
+        description: 'Review Gulfaro’s Terms and Conditions, strict ban on charging recruitment fees to candidates, and job posting guidelines.'
+      },
+      '/disclaimer': {
+        title: 'Legal & Editorial Disclaimer | Gulfaro',
+        description: 'Important disclaimers regarding independent job postings, employer verification, and educational career guides on Gulfaro.'
+      },
+      '/cookie-policy': {
+        title: 'Cookie Policy | Gulfaro',
+        description: 'Learn how Gulfaro uses essential browser storage and third-party advertising cookies, and how you can manage your preferences.'
+      }
+    };
+
+    if (staticSeo[cleanPath]) {
+      applyRouteSeo({
+        title: staticSeo[cleanPath].title,
+        description: staticSeo[cleanPath].description,
+        canonicalPath: cleanPath,
+        jsonLd: buildOrganizationSchema()
+      });
+      return;
+    }
+
+    if (['/post-job', '/post', '/my-job-posts', '/manage-jobs', '/unauthorized', '/forgot-password', '/reset-password', '/super-admin'].some(p => cleanPath.startsWith(p))) {
+      applyRouteSeo({
+        title: `${publicConfig?.cms?.siteName || 'Gulfaro'} — GCC Job Portal`,
+        description: 'Gulfaro account and job management portal.',
+        canonicalPath: cleanPath,
+        robots: 'noindex, nofollow',
+        jsonLd: null
+      });
+      return;
+    }
+
+    applyRouteSeo({
+      title: 'Gulfaro – GCC Job Portal | Jobs in Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman',
+      description: 'Find direct employer jobs across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman alongside original GCC CV writing, contract, and interview career guides.',
+      canonicalPath: '/',
+      jsonLd: buildOrganizationSchema()
+    });
+  }, [currentPath, selectedJob, publicConfig]);
+
   const reloadJobs = () => {
     setJobs(storageService.getJobs());
     setSavedJobIds(storageService.getSavedJobIds());
   };
 
-  // Switch demo persona
-  const handleSwitchUserRole = (role: 'job_seeker' | 'employer' | 'admin') => {
+  const employerJobCount = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'employer') return 0;
+    return jobs.filter(j => {
+      const matchId = j.userId === currentUser.id;
+      const matchEmail = j.contactEmail && j.contactEmail.toLowerCase() === currentUser.email.toLowerCase();
+      const matchComp = currentUser.companyName && j.company.toLowerCase() === currentUser.companyName.toLowerCase();
+      if (matchId || matchEmail || matchComp) return true;
+      if (currentUser.id === 'user-emp-1' && j.company.includes('Al-Bawani')) return true;
+      if (currentUser.id === 'user-emp-2' && j.company.includes('FinGulf')) return true;
+      return false;
+    }).length;
+  }, [jobs, currentUser]);
+
+  const handleOpenPostJob = () => {
+    if (currentUser?.role !== 'employer') {
+      navigateTo('/unauthorized');
+      return;
+    }
+    setEditingJob(null);
+    setSelectedJob(null);
+    setJobNotFoundSlug(null);
+    navigateTo('/post-job');
+  };
+
+  const handleEditJob = (job: JobAd) => {
+    if (currentUser?.role !== 'employer') {
+      navigateTo('/unauthorized');
+      return;
+    }
+    setEditingJob(job);
+    setSelectedJob(null);
+    setJobNotFoundSlug(null);
+    navigateTo('/post-job');
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    await storageService.deleteJobAsync(jobId);
+    reloadJobs();
+  };
+
+  const handleJobCreated = () => reloadJobs();
+  const handleJobUpdated = () => reloadJobs();
+
+  const handleSwitchUserRole = (role: 'job_seeker' | 'employer') => {
     const user = storageService.switchDemoUser(role);
     setCurrentUser(user);
-    if (role === 'admin') {
-      setActiveTab('admin');
+    if (role === 'employer') {
+      setActiveTab('my-jobs');
+      navigateTo('/my-job-posts');
+    } else {
+      setActiveTab('jobs');
+      navigateTo('/');
     }
   };
 
@@ -120,15 +445,20 @@ export default function App() {
     setAuthMode(mode);
     setActiveTab('auth');
     setSelectedJob(null);
+    setJobNotFoundSlug(null);
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      window.history.pushState(null, '', '/');
+      setCurrentPath('/');
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAuthSuccess = (user: User) => {
     setCurrentUser(user);
     if (user.role === 'employer') {
-      setActiveTab('dashboard');
+      setActiveTab('my-jobs');
     } else {
-      setActiveTab('jobs');
+      setActiveTab('dashboard');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -137,16 +467,14 @@ export default function App() {
     storageService.logoutUser();
     setCurrentUser(null);
     setActiveTab('jobs');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateTo('/');
   };
 
-  // Toggle save job
   const handleToggleSaveJob = (id: string) => {
     storageService.toggleSaveJob(id);
     setSavedJobIds(storageService.getSavedJobIds());
   };
 
-  // Search handler from Hero Section
   const handleHeroSearch = (filters: {
     query: string;
     country: GccCountry | 'all';
@@ -159,9 +487,13 @@ export default function App() {
     setSelectedCategory(filters.category);
     setActiveTab('jobs');
     setSelectedJob(null);
+    setJobNotFoundSlug(null);
+    if (typeof document !== 'undefined') {
+      const feed = document.getElementById('jobs-directory');
+      if (feed) feed.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
-  // Reset filters
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedCountry('all');
@@ -176,104 +508,83 @@ export default function App() {
     setSortBy('recent');
   };
 
-  // Open individual job detail view
   const handleSelectJob = (job: JobAd) => {
     setSelectedJob(job);
+    setJobNotFoundSlug(null);
+    setActiveTab('jobs');
+    if (typeof window !== 'undefined') {
+      const jobPath = `/job/${job.slug || job.id}`;
+      window.history.pushState(null, '', jobPath);
+      setCurrentPath(jobPath);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Filter and sort active jobs
+  // Active & unexpired jobs only for public feed
   const filteredJobs = useMemo(() => {
-    return jobs.filter(job => {
-      // Must be active to show in public classifieds
-      if (job.status !== 'active') return false;
+    if (publicConfig?.emergency?.hideAllPublicJobs) return [];
+    const nowMs = Date.now();
+    return jobs
+      .filter(job => {
+        if (!isJobActiveAndUnexpired(job, nowMs)) return false;
+        if (selectedCountry !== 'all' && job.country !== selectedCountry) return false;
+        if (selectedCity && job.city.toLowerCase() !== selectedCity.toLowerCase()) return false;
 
-      // Country filter
-      if (selectedCountry !== 'all' && job.country !== selectedCountry) {
-        return false;
-      }
-
-      // City filter
-      if (selectedCity && job.city.toLowerCase() !== selectedCity.toLowerCase()) {
-        return false;
-      }
-
-      // Category filter
-      if (selectedCategory && job.category !== selectedCategory) {
-        return false;
-      }
-
-      // Employment Type
-      if (filterEmploymentType !== 'all' && job.employmentType !== filterEmploymentType) {
-        return false;
-      }
-
-      // Iqama / Visa
-      if (filterIqama !== 'all') {
-        if (filterIqama === 'transferable' && job.iqamaRequirement !== 'transferable') return false;
-        if (filterIqama === 'visit-visa' && job.iqamaRequirement !== 'visit-visa' && job.iqamaRequirement !== 'any') return false;
-        if (filterIqama === 'citizen-only' && job.iqamaRequirement !== 'citizen-only') return false;
-      }
-
-      // Experience Level
-      if (filterExperience !== 'all' && job.experienceLevel !== filterExperience) {
-        return false;
-      }
-
-      // Urgent only
-      if (filterUrgentOnly && !job.isUrgent) {
-        return false;
-      }
-
-      // Featured only
-      if (filterFeaturedOnly && !job.isFeatured && job.packageType === 'standard') {
-        return false;
-      }
-
-      // Min Salary
-      if (filterMinSalary > 0) {
-        const effectiveSal = job.salaryMax || job.salaryMin || 0;
-        if (effectiveSal > 0 && effectiveSal < filterMinSalary) return false;
-      }
-
-      // Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const inTitle = job.title.toLowerCase().includes(q);
-        const inDesc = job.description.toLowerCase().includes(q);
-        const inComp = job.company.toLowerCase().includes(q);
-        const inCity = job.city.toLowerCase().includes(q);
-        const inSub = job.subcategory?.toLowerCase().includes(q) || false;
-        const inReq = job.requirements?.some(r => r.toLowerCase().includes(q)) || false;
-        if (!inTitle && !inDesc && !inComp && !inCity && !inSub && !inReq) {
+        if (selectedCategory && !jobMatchesCategoryFilter(job, selectedCategory)) {
           return false;
         }
-      }
 
-      return true;
-    }).sort((a, b) => {
-      // Sort logic
-      if (sortBy === 'salary-high') {
-        const salA = a.salaryMax || a.salaryMin || 0;
-        const salB = b.salaryMax || b.salaryMin || 0;
-        return salB - salA;
-      }
-      if (sortBy === 'urgent') {
-        if (a.isUrgent && !b.isUrgent) return -1;
-        if (!a.isUrgent && b.isUrgent) return 1;
-      }
-      if (sortBy === 'expiring') {
-        return new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime();
-      }
-      // Default: Sponsored/Featured first, then most recent postedAt
-      if (a.packageType === 'sponsored' && b.packageType !== 'sponsored') return -1;
-      if (b.packageType === 'sponsored' && a.packageType !== 'sponsored') return 1;
-      if (a.isFeatured && !b.isFeatured) return -1;
-      if (b.isFeatured && !a.isFeatured) return 1;
-      return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
-    });
+        if (filterEmploymentType !== 'all' && job.employmentType !== filterEmploymentType) return false;
+
+        if (filterIqama !== 'all') {
+          if (filterIqama === 'transferable' && job.iqamaRequirement !== 'transferable') return false;
+          if (filterIqama === 'visit-visa' && job.iqamaRequirement !== 'visit-visa' && job.iqamaRequirement !== 'any') return false;
+          if (filterIqama === 'citizen-only' && job.iqamaRequirement !== 'citizen-only') return false;
+        }
+
+        if (filterExperience !== 'all' && job.experienceLevel !== filterExperience) return false;
+        if (filterUrgentOnly && !job.isUrgent) return false;
+        if (filterFeaturedOnly && !job.isFeatured && job.packageType === 'standard') return false;
+
+        if (filterMinSalary > 0) {
+          const effectiveSal = job.salaryMax || job.salaryMin || 0;
+          if (effectiveSal > 0 && effectiveSal < filterMinSalary) return false;
+        }
+
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const inTitle = job.title.toLowerCase().includes(q);
+          const inDesc = job.description.toLowerCase().includes(q);
+          const inComp = job.company.toLowerCase().includes(q);
+          const inCity = job.city.toLowerCase().includes(q);
+          const inCat = getJobCategoryName(job.category, { title: job.title, subcategory: job.subcategory }).toLowerCase().includes(q);
+          const inSub = job.subcategory?.toLowerCase().includes(q) || false;
+          const inReq = job.requirements?.some(r => r.toLowerCase().includes(q)) || false;
+          if (!inTitle && !inDesc && !inComp && !inCity && !inCat && !inSub && !inReq) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'salary-high') {
+          return (b.salaryMax || b.salaryMin || 0) - (a.salaryMax || a.salaryMin || 0);
+        }
+        if (sortBy === 'urgent') {
+          if (a.isUrgent && !b.isUrgent) return -1;
+          if (!a.isUrgent && b.isUrgent) return 1;
+        }
+        if (sortBy === 'expiring') {
+          return new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime();
+        }
+        if (a.packageType === 'sponsored' && b.packageType !== 'sponsored') return -1;
+        if (b.packageType === 'sponsored' && a.packageType !== 'sponsored') return 1;
+        if (a.isFeatured && !b.isFeatured) return -1;
+        if (b.isFeatured && !a.isFeatured) return 1;
+        return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
+      });
   }, [
     jobs,
+    publicConfig,
     selectedCountry,
     selectedCity,
     selectedCategory,
@@ -300,559 +611,741 @@ export default function App() {
     searchQuery.trim() !== ''
   ].filter(Boolean).length;
 
+  // Super Admin Portal (completely isolated)
+  if (currentPath === '/admin' || currentPath.startsWith('/admin/')) {
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/super-admin');
+    }
+    return <SuperAdminPortal onNavigateHome={() => navigateTo('/')} />;
+  }
+
+  if (currentPath === '/super-admin' || currentPath.startsWith('/super-admin/')) {
+    return <SuperAdminPortal onNavigateHome={() => navigateTo('/')} />;
+  }
+
+  // Maintenance / Emergency Shutdown Gate
+  if (publicConfig?.emergency?.emergencyShutdown || publicConfig?.emergency?.maintenanceMode) {
+    const isShutdown = publicConfig.emergency.emergencyShutdown;
+    const noticeMsg = isShutdown
+      ? publicConfig.emergency.emergencyShutdownMessage
+      : publicConfig.emergency.maintenanceMessage;
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-4">
+          <img
+            src={publicConfig.cms?.logoUrl || '/assets/aistudio/Gulfaro_logo_white_clean.png'}
+            alt="Gulfaro"
+            className="h-9 mx-auto object-contain"
+          />
+          <h1 className="text-xl font-bold text-white">
+            {publicConfig.cms?.siteName || 'Gulfaro'} is Temporarily Unavailable
+          </h1>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            {noticeMsg || 'Scheduled platform maintenance is underway. Please check back shortly.'}
+          </p>
+          <p className="text-xs text-slate-400 pt-2">
+            Email: {publicConfig.cms?.contactUsEmail || 'admingulfaro@gmail.com'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Public Path Routing Helpers
+  const normalizedPath = currentPath.split('?')[0].replace(/\/+$/, '') || '/';
+  const publicInfoRoutes: PublicInfoRouteType[] = [
+    'about',
+    'contact',
+    'privacy-policy',
+    'terms',
+    'disclaimer',
+    'cookie-policy'
+  ];
+  const matchedInfoRoute = publicInfoRoutes.find(r => normalizedPath === `/${r}`);
+
+  const renderMainBody = () => {
+    if (normalizedPath === '/forgot-password' || currentPath.startsWith('/forgot-password')) {
+      return (
+        <ForgotPasswordPage
+          onNavigateToSignIn={() => handleOpenAuth('login')}
+          onNavigateToSignUp={() => handleOpenAuth('signup')}
+          onNavigateToResetPassword={(tok, em) => {
+            navigateTo(`/reset-password?token=${encodeURIComponent(tok)}&email=${encodeURIComponent(em)}`);
+          }}
+          onNavigateHome={() => navigateTo('/')}
+        />
+      );
+    }
+
+    if (normalizedPath === '/reset-password' || currentPath.startsWith('/reset-password')) {
+      return (
+        <ResetPasswordPage
+          tokenProp={new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('token')}
+          emailProp={new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('email')}
+          onNavigateToSignIn={() => handleOpenAuth('login')}
+          onNavigateToForgotPassword={() => navigateTo('/forgot-password')}
+        />
+      );
+    }
+
+    if (normalizedPath === '/unauthorized') {
+      return (
+        <UnauthorizedView
+          currentUser={currentUser}
+          onNavigateHome={() => navigateTo('/')}
+          onOpenAuth={handleOpenAuth}
+          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+        />
+      );
+    }
+
+    if (normalizedPath === '/post-job' || normalizedPath === '/post') {
+      return currentUser?.role === 'employer' ? (
+        <PostJobPage
+          currentUser={currentUser}
+          editingJob={editingJob}
+          onJobCreated={handleJobCreated}
+          onJobUpdated={handleJobUpdated}
+          onViewJob={job => {
+            setEditingJob(null);
+            handleSelectJob(job);
+          }}
+          onManageJobs={() => {
+            setEditingJob(null);
+            setActiveTab('my-jobs');
+            navigateTo('/my-job-posts');
+          }}
+          onCancel={() => {
+            setEditingJob(null);
+            setActiveTab('my-jobs');
+            navigateTo('/my-job-posts');
+          }}
+        />
+      ) : (
+        <UnauthorizedView
+          currentUser={currentUser}
+          onNavigateHome={() => navigateTo('/')}
+          onOpenAuth={handleOpenAuth}
+          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+        />
+      );
+    }
+
+    if (normalizedPath === '/my-job-posts' || normalizedPath === '/manage-jobs' || activeTab === 'my-jobs') {
+      return currentUser?.role === 'employer' ? (
+        <ManageJobsView
+          currentUser={currentUser}
+          jobs={jobs}
+          onEditJob={handleEditJob}
+          onDeleteJob={handleDeleteJob}
+          onOpenPostJob={handleOpenPostJob}
+          onSelectJob={handleSelectJob}
+          onNavigateHome={() => navigateTo('/')}
+        />
+      ) : (
+        <UnauthorizedView
+          currentUser={currentUser}
+          onNavigateHome={() => navigateTo('/')}
+          onOpenAuth={handleOpenAuth}
+          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+        />
+      );
+    }
+
+    if (activeTab === 'auth') {
+      return (
+        <AuthPage
+          initialMode={authMode}
+          onAuthSuccess={handleAuthSuccess}
+          onCancel={() => setActiveTab('jobs')}
+          onNavigateToForgotPassword={() => navigateTo('/forgot-password')}
+        />
+      );
+    }
+
+    if (isJobLoading) {
+      return (
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-24 text-center space-y-4">
+          <div className="w-10 h-10 border-3 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-semibold text-slate-700">Loading job details...</p>
+        </div>
+      );
+    }
+
+    if (jobNotFoundSlug) {
+      return (
+        <JobNotFoundView
+          requestedSlugOrId={jobNotFoundSlug}
+          onBrowseAll={() => {
+            setJobNotFoundSlug(null);
+            setSelectedJob(null);
+            navigateTo('/');
+          }}
+          onSearch={query => {
+            setJobNotFoundSlug(null);
+            setSelectedJob(null);
+            setSearchQuery(query);
+            navigateTo('/');
+          }}
+          onSelectCountry={country => {
+            setJobNotFoundSlug(null);
+            setSelectedJob(null);
+            navigateTo(`/country/${country}`);
+          }}
+        />
+      );
+    }
+
+    if (selectedJob) {
+      return (
+        <JobDetailView
+          job={selectedJob}
+          currentUser={currentUser}
+          onBack={() => navigateTo('/')}
+          onSelectSimilarJob={j => handleSelectJob(j)}
+          isSaved={savedJobIds.includes(selectedJob.id)}
+          onToggleSave={handleToggleSaveJob}
+          allJobs={jobs}
+        />
+      );
+    }
+
+    if (activeTab === 'dashboard') {
+      return (
+        <UserDashboard
+          currentUser={currentUser}
+          onOpenPostJob={handleOpenPostJob}
+          onSelectJob={handleSelectJob}
+          onEditJob={handleEditJob}
+          onOpenAuth={handleOpenAuth}
+        />
+      );
+    }
+
+    // Dedicated Public Info / Legal Pages (No Login Required)
+    if (matchedInfoRoute) {
+      return (
+        <PublicInfoPages
+          page={matchedInfoRoute}
+          publicConfig={publicConfig}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+
+    // Dedicated Career Advice Hub & Articles
+    if (normalizedPath === '/career-advice') {
+      return <CareerResourcesPage onNavigate={navigateTo} />;
+    }
+    if (normalizedPath.startsWith('/career-advice/')) {
+      const articleSlug = normalizedPath.replace('/career-advice/', '');
+      return <CareerResourcesPage articleSlug={articleSlug} onNavigate={navigateTo} />;
+    }
+
+    // Dedicated GCC Country Browsing Pages
+    if (normalizedPath === '/countries' || activeTab === 'countries') {
+      return (
+        <CountryPortalPage
+          jobs={jobs}
+          savedJobIds={savedJobIds}
+          onToggleSave={handleToggleSaveJob}
+          onSelectJob={handleSelectJob}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+    if (normalizedPath.startsWith('/country/')) {
+      const countrySlug = normalizedPath.replace('/country/', '');
+      return (
+        <CountryPortalPage
+          countrySlug={countrySlug}
+          jobs={jobs}
+          savedJobIds={savedJobIds}
+          onToggleSave={handleToggleSaveJob}
+          onSelectJob={handleSelectJob}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+
+    // Dedicated Category Browsing Pages (All 30 Categories)
+    if (normalizedPath === '/categories') {
+      return (
+        <CategoryPortalPage
+          jobs={jobs}
+          savedJobIds={savedJobIds}
+          onToggleSave={handleToggleSaveJob}
+          onSelectJob={handleSelectJob}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+    if (normalizedPath.startsWith('/category/')) {
+      const categorySlug = normalizedPath.replace('/category/', '');
+      return (
+        <CategoryPortalPage
+          categorySlug={categorySlug}
+          jobs={jobs}
+          savedJobIds={savedJobIds}
+          onToggleSave={handleToggleSaveJob}
+          onSelectJob={handleSelectJob}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+
+    // Main Homepage
+    const activeTotal = jobs.filter(j => isJobActiveAndUnexpired(j)).length;
+
+    return (
+      <div>
+        <HeroSection
+          onSearch={handleHeroSearch}
+          selectedCountry={selectedCountry}
+          onQuickCountrySelect={c => {
+            setSelectedCountry(c);
+            setSelectedCity('');
+          }}
+          onNavigatePath={navigateTo}
+          totalJobsCount={activeTotal}
+          heroTitle={publicConfig?.cms?.heroTitle}
+          heroSubtitle={publicConfig?.cms?.heroSubtitle}
+        />
+
+        {/* Browse Jobs by GCC Country */}
+        <CountrySection
+          jobs={jobs}
+          selectedCountry={selectedCountry}
+          onSelectCountry={c => {
+            setSelectedCountry(c);
+            setSelectedCity('');
+          }}
+          onSelectCity={(country, city) => {
+            setSelectedCountry(country);
+            setSelectedCity(city);
+            const feed = document.getElementById('jobs-directory');
+            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onOpenCountryPage={slug => navigateTo(slug ? `/country/${slug}` : '/countries')}
+        />
+
+        {/* Browse Jobs by 30 Employment Categories */}
+        <CategorySection
+          jobs={jobs}
+          selectedCategory={selectedCategory}
+          onSelectCategory={slug => {
+            setSelectedCategory(slug);
+            const feed = document.getElementById('jobs-directory');
+            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onOpenCategoryPage={slug => navigateTo(slug ? `/category/${slug}` : '/categories')}
+        />
+
+        {/* Separated Leaderboard Advertisement */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <AdBanner type="leaderboard" />
+        </div>
+
+        {/* Latest Job Opportunities & Interactive Filter Explorer */}
+        <section id="jobs-directory" className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 mb-6">
+            <div>
+              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                {selectedCountry !== 'all'
+                  ? `${GCC_COUNTRIES[selectedCountry].name} Job Opportunities`
+                  : 'Latest Job Opportunities Across the GCC'}
+                {selectedCity ? ` · ${selectedCity}` : ''}
+              </h2>
+              <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                <span className="font-bold text-slate-800 tabular-nums">
+                  {filteredJobs.length} {filteredJobs.length === 1 ? 'vacancy' : 'vacancies'}
+                </span>
+                <span>available</span>
+                {activeFiltersCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <button
+                      onClick={handleResetFilters}
+                      className="text-teal-700 hover:underline font-semibold inline-flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset filters ({activeFiltersCount})</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                onClick={() => setShowMobileFilters(!showMobileFilters)}
+                className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700"
+              >
+                <Filter className="w-3.5 h-3.5 text-teal-700" />
+                <span>Filters {activeFiltersCount > 0 ? `(${activeFiltersCount})` : ''}</span>
+              </button>
+
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                aria-label="Sort jobs by"
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-teal-600"
+              >
+                <option value="recent">Most Recent First</option>
+                <option value="urgent">Urgent Hiring First</option>
+                <option value="salary-high">Highest Salary</option>
+                <option value="expiring">Closing Soonest</option>
+              </select>
+
+              <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 text-slate-600">
+                <button
+                  onClick={() => setViewMode('cards')}
+                  className={`p-1.5 rounded ${viewMode === 'cards' ? 'bg-white text-slate-900 font-bold' : ''}`}
+                  title="Card View"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode('compact')}
+                  className={`p-1.5 rounded ${viewMode === 'compact' ? 'bg-white text-slate-900 font-bold' : ''}`}
+                  title="Compact List View"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+            {/* Sidebar */}
+            <aside className={`lg:block ${showMobileFilters ? 'block' : 'hidden'} bg-white rounded-xl border border-slate-200 p-5 space-y-5 text-xs text-slate-700`}>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
+                  <SlidersHorizontal className="w-4 h-4 text-teal-700" />
+                  <span>Filter Vacancies</span>
+                </div>
+                {activeFiltersCount > 0 && (
+                  <button onClick={handleResetFilters} className="text-[11px] text-teal-700 hover:underline font-semibold">
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Country
+                </label>
+                <select
+                  value={selectedCountry}
+                  onChange={e => {
+                    setSelectedCountry(e.target.value as any);
+                    setSelectedCity('');
+                  }}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-semibold"
+                >
+                  <option value="all">All 6 GCC Countries</option>
+                  {Object.values(GCC_COUNTRIES).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+
+                {selectedCountry !== 'all' && (
+                  <div className="pt-1">
+                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider mb-1">
+                      City
+                    </label>
+                    <select
+                      value={selectedCity}
+                      onChange={e => setSelectedCity(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
+                    >
+                      <option value="">All Cities</option>
+                      {GCC_COUNTRIES[selectedCountry].topCities.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Category
+                </label>
+                <select
+                  value={selectedCategory}
+                  onChange={e => setSelectedCategory(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
+                >
+                  <option value="">All Categories</option>
+                  {PUBLIC_JOB_CATEGORIES.map(c => (
+                    <option key={c.slug} value={c.slug}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Employment Type
+                </label>
+                <select
+                  value={filterEmploymentType}
+                  onChange={e => setFilterEmploymentType(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
+                >
+                  <option value="all">All Types</option>
+                  <option value="full-time">Full-Time</option>
+                  <option value="part-time">Part-Time</option>
+                  <option value="contract">Contract</option>
+                  <option value="temporary">Temporary</option>
+                  <option value="remote">Remote</option>
+                </select>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Experience
+                </label>
+                <select
+                  value={filterExperience}
+                  onChange={e => setFilterExperience(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
+                >
+                  <option value="all">Any Experience</option>
+                  <option value="fresher">Fresher (0 - 1 Yr)</option>
+                  <option value="1-3-years">1 to 3 Years</option>
+                  <option value="3-5-years">3 to 5 Years</option>
+                  <option value="5-10-years">5 to 10 Years</option>
+                  <option value="10-plus-years">10+ Years</option>
+                </select>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filterUrgentOnly}
+                    onChange={e => setFilterUrgentOnly(e.target.checked)}
+                    className="rounded text-rose-600"
+                  />
+                  <span className="font-semibold text-rose-700 flex items-center gap-1">
+                    <Zap className="w-3.5 h-3.5" /> Urgent Only
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filterFeaturedOnly}
+                    onChange={e => setFilterFeaturedOnly(e.target.checked)}
+                    className="rounded text-teal-600"
+                  />
+                  <span className="font-semibold text-slate-800 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-teal-600" /> Featured Only
+                  </span>
+                </label>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex justify-between items-center text-[11px] mb-1">
+                  <label className="font-bold text-slate-800 uppercase tracking-wider">Min Monthly Salary</label>
+                  <span className="font-mono font-bold text-teal-700">
+                    {filterMinSalary > 0 ? `${filterMinSalary.toLocaleString()}+` : 'Any'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={20000}
+                  step={1000}
+                  value={filterMinSalary}
+                  onChange={e => setFilterMinSalary(Number(e.target.value))}
+                  className="w-full accent-teal-600"
+                />
+              </div>
+
+              <AdBanner type="rectangle" />
+            </aside>
+
+            {/* Job Feed */}
+            <div className="lg:col-span-3 space-y-4">
+              {filteredJobs.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3">
+                  <p className="text-slate-800 font-bold text-base">
+                    No active job vacancies matched your current filters.
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Gulfaro only displays verified active positions. Try clearing filters or exploring another GCC country.
+                  </p>
+                  <button
+                    onClick={handleResetFilters}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+              ) : viewMode === 'cards' ? (
+                <div className="grid grid-cols-1 gap-4">
+                  {filteredJobs.map((job, idx) => (
+                    <React.Fragment key={job.id}>
+                      <JobCard
+                        job={job}
+                        isSaved={savedJobIds.includes(job.id)}
+                        onToggleSave={handleToggleSaveJob}
+                        onSelectJob={handleSelectJob}
+                      />
+                      {idx === 3 && <AdBanner type="in-feed" />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="bg-slate-100 px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between border-b border-slate-200">
+                    <span>Date & Country</span>
+                    <span>Vacancy & Employer</span>
+                    <span>Actions</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {filteredJobs.map(job => (
+                      <JobCompactRow
+                        key={job.id}
+                        job={job}
+                        isSaved={savedJobIds.includes(job.id)}
+                        onToggleSave={handleToggleSaveJob}
+                        onSelectJob={handleSelectJob}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Real Featured Employers, Career Advice, CV & Interview Resources, Employer CTA */}
+        <HomepageEditorialSections
+          jobs={jobs}
+          currentUser={currentUser}
+          onNavigatePath={navigateTo}
+          onFilterByCompany={companyName => {
+            setSearchQuery(companyName);
+            const feed = document.getElementById('jobs-directory');
+            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onOpenPostJob={handleOpenPostJob}
+          onOpenAuth={handleOpenAuth}
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-teal-600 selection:text-white">
-      
-      {/* Universal Top Navigation */}
+      {publicConfig?.cms?.announcementBanner?.enabled && publicConfig.cms.announcementBanner.text && (
+        <div
+          className={`text-xs font-semibold text-center px-4 py-2 ${
+            publicConfig.cms.announcementBanner.variant === 'urgent'
+              ? 'bg-rose-700 text-white'
+              : publicConfig.cms.announcementBanner.variant === 'warning'
+              ? 'bg-amber-500 text-slate-950'
+              : 'bg-teal-700 text-white'
+          }`}
+        >
+          {publicConfig.cms.announcementBanner.text}
+        </div>
+      )}
+
       <Navbar
+        currentPath={currentPath}
         currentCountry={selectedCountry}
-        onSelectCountry={(c) => {
+        onNavigatePath={navigateTo}
+        onSelectCountry={c => {
           setSelectedCountry(c);
           setSelectedCity('');
-          setSelectedJob(null);
-          setActiveTab('jobs');
+          navigateTo('/');
         }}
         currentUser={currentUser}
-        onSwitchUserRole={handleSwitchUserRole}
-        onOpenPostJob={() => setIsPostModalOpen(true)}
-        onNavigateTab={(tab) => {
+        onOpenPostJob={handleOpenPostJob}
+        onNavigateTab={tab => {
           setActiveTab(tab);
           setSelectedJob(null);
-          if (tab === 'safety') {
-            setIsSafetyModalOpen(true);
+          setJobNotFoundSlug(null);
+          if (tab === 'my-jobs') {
+            if (currentUser?.role === 'employer') {
+              navigateTo('/my-job-posts');
+            } else {
+              navigateTo('/unauthorized');
+            }
+          } else if (tab === 'countries') {
+            navigateTo('/countries');
+          } else {
+            if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+              window.history.pushState(null, '', '/');
+              setCurrentPath('/');
+            }
+            if (tab === 'safety') {
+              setIsSafetyModalOpen(true);
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           }
-          window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenAuth={handleOpenAuth}
         onLogout={handleLogout}
         activeTab={activeTab}
         savedCount={savedJobIds.length}
+        employerJobCount={employerJobCount}
+        onOpenInstall={openInstallModal}
+        isAppInstalled={isPWAInstalled}
       />
 
-      {/* Main Body Routing */}
-      <main className="flex-1">
-        
-        {/* VIEW 0: Login and Sign Up Page */}
-        {activeTab === 'auth' ? (
-          <AuthPage
-            initialMode={authMode}
-            onAuthSuccess={handleAuthSuccess}
-            onCancel={() => setActiveTab('jobs')}
-          />
-        ) : selectedJob ? (
-          /* VIEW 1: Individual Job Detail Page */
-          <JobDetailView
-            job={selectedJob}
-            currentUser={currentUser}
-            onBack={() => setSelectedJob(null)}
-            onSelectSimilarJob={(j) => setSelectedJob(j)}
-            isSaved={savedJobIds.includes(selectedJob.id)}
-            onToggleSave={handleToggleSaveJob}
-            allJobs={jobs}
-          />
-        ) : activeTab === 'dashboard' ? (
-          /* VIEW 2: Employer & Job Seeker Dashboard */
-          <UserDashboard
-            currentUser={currentUser}
-            onOpenPostJob={() => setIsPostModalOpen(true)}
-            onSelectJob={handleSelectJob}
-            onOpenAuth={handleOpenAuth}
-          />
-        ) : activeTab === 'admin' ? (
-          /* VIEW 3: Super Admin Moderation Panel */
-          <AdminDashboard
-            onSelectJob={handleSelectJob}
-          />
-        ) : activeTab === 'countries' ? (
-          /* VIEW 4: GCC Countries Hub */
-          <div className="py-8 bg-slate-50">
-            <CountrySection
-              jobs={jobs}
-              selectedCountry={selectedCountry}
-              onSelectCountry={(c) => {
-                setSelectedCountry(c);
-                setActiveTab('jobs');
-              }}
-              onSelectCity={(country, city) => {
-                setSelectedCountry(country);
-                setSelectedCity(city);
-                setActiveTab('jobs');
-              }}
-            />
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-              <h3 className="text-lg font-bold text-slate-900 mb-4">Latest Classifieds in GCC</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {jobs.slice(0, 6).map(j => (
-                  <JobCard
-                    key={j.id}
-                    job={j}
-                    isSaved={savedJobIds.includes(j.id)}
-                    onToggleSave={handleToggleSaveJob}
-                    onSelectJob={handleSelectJob}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* VIEW 5: Main Homepage & Job Search Listings */
-          <div>
-            {/* Hero Section with Skyline and Multi-field Search */}
-            <HeroSection
-              onSearch={handleHeroSearch}
-              selectedCountry={selectedCountry}
-              onQuickCountrySelect={(c) => {
-                setSelectedCountry(c);
-                setSelectedCity('');
-              }}
-              totalJobsCount={jobs.filter(j => j.status === 'active').length}
-            />
+      <main className="flex-1">{renderMainBody()}</main>
 
-            {/* 6 GCC Country Section */}
-            <CountrySection
-              jobs={jobs}
-              selectedCountry={selectedCountry}
-              onSelectCountry={(c) => {
-                setSelectedCountry(c);
-                setSelectedCity('');
-              }}
-              onSelectCity={(c, city) => {
-                setSelectedCountry(c);
-                setSelectedCity(city);
-              }}
-            />
-
-            {/* Job Categories Section */}
-            <CategorySection
-              jobs={jobs}
-              selectedCategory={selectedCategory}
-              onSelectCategory={(catId) => setSelectedCategory(catId)}
-            />
-
-            {/* Google AdSense Responsive Leaderboard (728x90) */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
-              <AdBanner type="leaderboard" />
-            </div>
-
-            {/* Main Classifieds Marketplace Area */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-              
-              {/* Header Strip: Active Filter Summary, View Switcher & Sort */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 mb-6">
-                
-                {/* Active Context Label */}
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                    <span>
-                      {selectedCountry !== 'all' 
-                        ? `${GCC_COUNTRIES[selectedCountry].flag} Jobs in ${GCC_COUNTRIES[selectedCountry].name}` 
-                        : 'Latest GCC Job Advertisements'}
-                    </span>
-                    {selectedCity && (
-                      <span className="text-teal-700 font-bold text-lg">· {selectedCity}</span>
-                    )}
-                  </h2>
-
-                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                    <span className="font-bold text-slate-800 tabular-nums">
-                      {filteredJobs.length} {filteredJobs.length === 1 ? 'vacancy' : 'vacancies'}
-                    </span>
-                    <span>available right now</span>
-                    {activeFiltersCount > 0 && (
-                      <>
-                        <span>·</span>
-                        <button
-                          onClick={handleResetFilters}
-                          className="text-teal-600 hover:text-teal-800 font-semibold flex items-center gap-1"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Reset all ({activeFiltersCount})</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Controls: Mobile Filter Button, Sort Dropdown & Card/List Toggle */}
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  
-                  {/* Mobile Filter Button */}
-                  <button
-                    onClick={() => setShowMobileFilters(!showMobileFilters)}
-                    className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 shadow-2xs"
-                  >
-                    <Filter className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Filters {activeFiltersCount > 0 ? `(${activeFiltersCount})` : ''}</span>
-                  </button>
-
-                  {/* Sort By Dropdown */}
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="text-slate-500 hidden md:inline">Sort:</span>
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as any)}
-                      aria-label="Sort jobs by"
-                      className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                    >
-                      <option value="recent">Most Recent First</option>
-                      <option value="urgent">Urgent Hiring First</option>
-                      <option value="salary-high">Highest Salary</option>
-                      <option value="expiring">Expiring Soonest</option>
-                    </select>
-                  </div>
-
-                  {/* Card vs Compact Classified View Toggle */}
-                  <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 text-slate-600">
-                    <button
-                      onClick={() => setViewMode('cards')}
-                      className={`p-1.5 rounded transition-colors ${
-                        viewMode === 'cards' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'hover:text-slate-900'
-                      }`}
-                      title="Modern Card View"
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('compact')}
-                      className={`p-1.5 rounded transition-colors ${
-                        viewMode === 'compact' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'hover:text-slate-900'
-                      }`}
-                      title="Compact Expatriates Classified View"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* Layout: Filter Sidebar + Job Feed */}
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                
-                {/* Advanced Filter Sidebar */}
-                <aside className={`lg:block ${showMobileFilters ? 'block' : 'hidden'} bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-5 text-xs text-slate-700`}>
-                  
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
-                      <SlidersHorizontal className="w-4 h-4 text-teal-600" />
-                      <span>Refine Classifieds</span>
-                    </div>
-                    {activeFiltersCount > 0 && (
-                      <button
-                        onClick={handleResetFilters}
-                        className="text-[11px] text-teal-600 hover:text-teal-800 font-semibold"
-                      >
-                        Clear All
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Country & City Filter */}
-                  <div className="space-y-2">
-                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-                      GCC Country
-                    </label>
-                    <select
-                      value={selectedCountry}
-                      onChange={(e) => {
-                        setSelectedCountry(e.target.value as any);
-                        setSelectedCity('');
-                      }}
-                      className="w-full px-2.5 py-2 border border-slate-300 rounded-lg bg-slate-50 text-xs font-semibold focus:outline-none focus:border-teal-500"
-                    >
-                      <option value="all">🌐 All GCC Countries</option>
-                      {Object.values(GCC_COUNTRIES).map(c => (
-                        <option key={c.id} value={c.id}>{c.flag} {c.name}</option>
-                      ))}
-                    </select>
-
-                    {selectedCountry !== 'all' && (
-                      <div className="pt-1">
-                        <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider mb-1">
-                          City in {GCC_COUNTRIES[selectedCountry].name}
-                        </label>
-                        <select
-                          value={selectedCity}
-                          onChange={(e) => setSelectedCity(e.target.value)}
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs focus:outline-none"
-                        >
-                          <option value="">All Cities</option>
-                          {GCC_COUNTRIES[selectedCountry].topCities.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Iqama / Visa Status */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-                      Iqama / Visa Status
-                    </label>
-                    <div className="space-y-1.5">
-                      {[
-                        { id: 'all', label: 'Any Status' },
-                        { id: 'transferable', label: 'Transferable Iqama / NOC' },
-                        { id: 'visit-visa', label: 'Visit Visa Accepted' },
-                        { id: 'citizen-only', label: 'GCC Nationals Only' }
-                      ].map(opt => (
-                        <label key={opt.id} className="flex items-center gap-2 cursor-pointer text-xs">
-                          <input
-                            type="radio"
-                            name="iqamaFilter"
-                            checked={filterIqama === opt.id}
-                            onChange={() => setFilterIqama(opt.id)}
-                            className="text-teal-600 focus:ring-teal-500"
-                          />
-                          <span className={filterIqama === opt.id ? 'font-bold text-teal-800' : 'text-slate-600'}>
-                            {opt.label}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Employment Type */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-                      Employment Type
-                    </label>
-                    <select
-                      value={filterEmploymentType}
-                      onChange={(e) => setFilterEmploymentType(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs focus:outline-none capitalize"
-                    >
-                      <option value="all">All Employment Types</option>
-                      <option value="full-time">Full-Time</option>
-                      <option value="contract">Contract / Freelance</option>
-                      <option value="part-time">Part-Time</option>
-                      <option value="walk-in">Walk-In Interviews</option>
-                      <option value="remote">Remote</option>
-                    </select>
-                  </div>
-
-                  {/* Experience Level */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-                      Experience Level
-                    </label>
-                    <select
-                      value={filterExperience}
-                      onChange={(e) => setFilterExperience(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs focus:outline-none capitalize"
-                    >
-                      <option value="all">Any Experience</option>
-                      <option value="fresher">Fresher (0 - 1 Yr)</option>
-                      <option value="1-3-years">1 to 3 Years</option>
-                      <option value="3-5-years">3 to 5 Years</option>
-                      <option value="5-10-years">5 to 10 Years</option>
-                      <option value="10-plus-years">10+ Years</option>
-                    </select>
-                  </div>
-
-                  {/* Fast Checkboxes: Urgent & Featured */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={filterUrgentOnly}
-                        onChange={(e) => setFilterUrgentOnly(e.target.checked)}
-                        className="rounded text-rose-600 focus:ring-rose-500"
-                      />
-                      <span className="font-semibold text-rose-700 flex items-center gap-1">
-                        <Zap className="w-3.5 h-3.5 text-rose-600" /> Urgent Vacancies Only
-                      </span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={filterFeaturedOnly}
-                        onChange={(e) => setFilterFeaturedOnly(e.target.checked)}
-                        className="rounded text-amber-500 focus:ring-amber-500"
-                      />
-                      <span className="font-semibold text-amber-800 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Featured Advertisements
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* Min Monthly Salary Slider */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <div className="flex justify-between items-center text-[11px]">
-                      <label className="font-bold text-slate-800 uppercase tracking-wider">
-                        Min. Monthly Salary
-                      </label>
-                      <span className="font-mono font-bold text-teal-700">
-                        {filterMinSalary > 0 ? `${filterMinSalary.toLocaleString()}+` : 'Any'}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={20000}
-                      step={1000}
-                      value={filterMinSalary}
-                      onChange={(e) => setFilterMinSalary(Number(e.target.value))}
-                      className="w-full accent-teal-600"
-                    />
-                  </div>
-
-                  {/* Expatriates Advice Callout */}
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-[11px] text-slate-500 space-y-1">
-                    <p className="font-semibold text-slate-800">Direct Contact Tip:</p>
-                    <p>
-                      Send a polite message introducing yourself with your Iqama status and attach your CV when messaging on WhatsApp.
-                    </p>
-                  </div>
-
-                  {/* Google AdSense Medium Rectangle (300x250) */}
-                  <div className="pt-2">
-                    <AdBanner type="rectangle" />
-                  </div>
-
-                </aside>
-
-                {/* Job Listings Column */}
-                <div className="lg:col-span-3 space-y-4">
-                  
-                  {filteredJobs.length === 0 ? (
-                    <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3">
-                      <p className="text-slate-700 font-bold text-base">No classified advertisements matched your filters.</p>
-                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                        Try clearing some filters, expanding your city search, or browsing all 6 GCC countries.
-                      </p>
-                      <button
-                        onClick={handleResetFilters}
-                        className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"
-                      >
-                        Reset All Filters
-                      </button>
-                    </div>
-                  ) : viewMode === 'cards' ? (
-                    /* Modern Responsive Cards with In-Feed AdSense units */
-                    <div className="grid grid-cols-1 gap-4">
-                      {filteredJobs.map((job, idx) => (
-                        <React.Fragment key={job.id}>
-                          <JobCard
-                            job={job}
-                            isSaved={savedJobIds.includes(job.id)}
-                            onToggleSave={handleToggleSaveJob}
-                            onSelectJob={handleSelectJob}
-                          />
-                          {(idx === 2 || idx === 6) && (
-                            <AdBanner type="in-feed" />
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  ) : (
-                    /* Compact Expatriates Classified Table */
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-                      <div className="bg-slate-100/90 px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between border-b border-slate-200">
-                        <span>Date & Location</span>
-                        <span>Job Title, Company & Qualifications</span>
-                        <span>Fast Actions</span>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                        {filteredJobs.map((job) => (
-                          <JobCompactRow
-                            key={job.id}
-                            job={job}
-                            isSaved={savedJobIds.includes(job.id)}
-                            onToggleSave={handleToggleSaveJob}
-                            onSelectJob={handleSelectJob}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Trust Banner Below Listings */}
-                  <div className="bg-slate-900 text-white rounded-xl p-5 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0">
-                        <MessageCircle className="w-5 h-5 text-teal-400" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-sm text-white">Direct Employer Connections</h3>
-                        <p className="text-xs text-slate-400">
-                          Gulfaro connects you directly with recruitment decision makers in KSA, UAE, Qatar, Kuwait, Bahrain & Oman.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => setIsPostModalOpen(true)}
-                      className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-lg whitespace-nowrap"
-                    >
-                      Post an Advertisement
-                    </button>
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
-          </div>
-        )}
-
-      </main>
-
-      {/* Universal Footer */}
       <Footer
-        onSelectCountry={(c) => {
+        onSelectCountry={c => {
           setSelectedCountry(c);
           setSelectedCity('');
-          setSelectedJob(null);
-          setActiveTab('jobs');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
-        onOpenPostJob={() => setIsPostModalOpen(true)}
+        onNavigatePath={navigateTo}
+        onOpenPostJob={handleOpenPostJob}
         onOpenSafetyGuide={() => setIsSafetyModalOpen(true)}
         onOpenAuth={handleOpenAuth}
-        onOpenLegal={(type) => setLegalModalType(type)}
+        onOpenInstall={openInstallModal}
+        currentUser={currentUser}
+        cmsOverrides={publicConfig?.cms}
       />
 
-      {/* Post a Job Modal (Step-by-step user journey) */}
       <PostJobModal
         isOpen={isPostModalOpen}
-        onClose={() => setIsPostModalOpen(false)}
-        onJobCreated={(newJob) => {
-          reloadJobs();
-          setSelectedJob(newJob);
-          setActiveTab('jobs');
+        onClose={() => {
+          setIsPostModalOpen(false);
+          setEditingJob(null);
         }}
+        editingJob={editingJob}
+        onJobCreated={handleJobCreated}
+        onJobUpdated={handleJobUpdated}
         currentUser={currentUser}
       />
 
-      {/* Expatriate Safety & Legal Guidelines Modal */}
-      <SafetyGuideModal
-        isOpen={isSafetyModalOpen}
-        onClose={() => setIsSafetyModalOpen(false)}
-      />
+      <SafetyGuideModal isOpen={isSafetyModalOpen} onClose={() => setIsSafetyModalOpen(false)} />
 
-      {/* User Registration Modal */}
       <RegisterModal
         isOpen={isRegisterModalOpen}
         onClose={() => setIsRegisterModalOpen(false)}
-        onUserRegistered={(user) => {
-          setCurrentUser(user);
-        }}
+        onUserRegistered={user => setCurrentUser(user)}
       />
 
-      {/* Google AdSense Compliance: Privacy Policy & Terms of Service */}
-      <LegalModal
-        type={legalModalType}
-        onClose={() => setLegalModalType(null)}
-      />
+      <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
 
-      {/* Google AdSense Cookie Consent Banner */}
       <CookieConsentBanner />
 
+      <PWAInstallModal
+        isOpen={isInstallModalOpen}
+        onClose={closeInstallModal}
+        onInstall={promptInstall}
+        hasNativePrompt={hasNativePrompt}
+        isIOS={isIOS}
+        isAndroid={isAndroid}
+        isInstalled={isPWAInstalled}
+      />
     </div>
   );
 }

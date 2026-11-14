@@ -1,170 +1,255 @@
 import React from 'react';
-import { GccCountry, GCC_COUNTRIES } from '../types/job';
-import { ShieldCheck, MessageCircle, Globe, PlusCircle } from 'lucide-react';
+import { GccCountry, User } from '../types/job';
+import { GCC_COUNTRY_DIRECTORY, PUBLIC_JOB_CATEGORIES } from '../data/gccDirectory';
+import { CAREER_ARTICLES } from '../data/careerArticles';
+import { Mail, PlusCircle } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface FooterProps {
   onSelectCountry: (c: GccCountry | 'all') => void;
+  onNavigatePath: (path: string) => void;
   onOpenPostJob: () => void;
   onOpenSafetyGuide: () => void;
   onOpenAuth?: (mode: 'login' | 'signup') => void;
-  onOpenLegal?: (type: 'privacy' | 'terms') => void;
+  onOpenInstall?: () => void;
+  currentUser?: User | null;
+  cmsOverrides?: {
+    logoUrl?: string;
+    footerDescription?: string;
+    footerContactEmail?: string;
+    footerCopyright?: string;
+  };
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onSelectCountry,
+  onNavigatePath,
   onOpenPostJob,
   onOpenSafetyGuide,
   onOpenAuth,
-  onOpenLegal
+  onOpenInstall,
+  currentUser,
+  cmsOverrides
 }) => {
+  const contactEmail = cmsOverrides?.footerContactEmail || 'admingulfaro@gmail.com';
+
   return (
     <footer className="bg-slate-950 text-slate-400 border-t border-slate-800 text-xs">
-      
-      {/* Top CTA Strip */}
+      {/* Top Recruitment Call-to-Action Strip */}
       <div className="border-b border-slate-800/80 bg-slate-900/50 py-8 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-white mb-1">
-              Hiring in Saudi Arabia, UAE or the Gulf?
-            </h2>
-            <p className="text-xs text-slate-400">
-              Post your job vacancy for free and receive direct inquiries via WhatsApp and phone from qualified candidates.
-            </p>
-          </div>
-
-          <button
-            onClick={onOpenPostJob}
-            className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-lg shadow-sm whitespace-nowrap active:scale-95 transition-all"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Post a Free Classified Now</span>
-          </button>
+          {currentUser?.role === 'job_seeker' ? (
+            <>
+              <div>
+                <h2 className="text-lg font-bold text-white mb-1">
+                  Preparing for Your Next Career Step in the Gulf?
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Review our original GCC CV guides, interview preparation articles, and employment contract checklists.
+                </p>
+              </div>
+              <button
+                onClick={() => onNavigatePath('/career-advice')}
+                className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-lg whitespace-nowrap transition-colors"
+              >
+                Explore Career Resources
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <h2 className="text-lg font-bold text-white mb-1">
+                  Hiring Across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain or Oman?
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Publish your job opening and connect directly with qualified candidates via official email and telephone.
+                </p>
+              </div>
+              <button
+                onClick={currentUser?.role === 'employer' ? onOpenPostJob : () => onOpenAuth?.('signup')}
+                className="flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-lg whitespace-nowrap transition-colors"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>{currentUser?.role === 'employer' ? 'Post a New Job' : 'Employer Sign Up'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Links Grid */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
-        
-        {/* Col 1: Brand & Identity */}
+      {/* Multi-Column Structured Footer Links */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-2 md:grid-cols-5 gap-8">
+        {/* Column 1: Brand & Official Email Only */}
         <div className="col-span-2 md:col-span-1 space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-teal-500 text-slate-950 flex items-center justify-center font-black text-sm">
-              G
-            </div>
-            <span className="text-xl font-black text-white tracking-tight">GULFARO</span>
-          </div>
+          <button
+            onClick={() => onNavigatePath('/')}
+            className="text-left focus:outline-none hover:opacity-90 transition-opacity"
+            aria-label="Gulfaro Homepage"
+          >
+            <img
+              src={cmsOverrides?.logoUrl || '/assets/aistudio/Gulfaro_logo_white_clean.png'}
+              alt="Gulfaro"
+              className="h-8 w-auto object-contain"
+            />
+          </button>
           <p className="text-xs text-slate-400 leading-relaxed">
-            The modern GCC job marketplace inspired by Expatriates.com. Connecting skilled expat and national talent with direct verified employers across the Arabian Gulf.
+            {cmsOverrides?.footerDescription ||
+              'Gulfaro is an independent GCC job portal and career information resource connecting job seekers and employers across six Gulf nations.'}
           </p>
-          <div className="flex items-center gap-2 text-teal-400 text-xs font-semibold">
-            <MessageCircle className="w-4 h-4" />
-            <span>Direct WhatsApp & Call Connections</span>
+          <div className="flex items-center gap-2 text-slate-300 text-xs pt-1">
+            <Mail className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+            <a href={`mailto:${contactEmail}`} className="hover:text-teal-300 transition-colors font-mono text-[11px] truncate">
+              {contactEmail}
+            </a>
           </div>
         </div>
 
-        {/* Col 2: 6 GCC Countries */}
-        <div className="space-y-2">
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider mb-2">
-            GCC Country Portals
+        {/* Column 2: 6 GCC Countries */}
+        <div className="space-y-2.5">
+          <h3 className="font-bold text-white text-xs uppercase tracking-wider">
+            GCC Countries
           </h3>
           <ul className="space-y-1.5">
-            {Object.values(GCC_COUNTRIES).map((c) => (
+            {GCC_COUNTRY_DIRECTORY.map(c => (
               <li key={c.id}>
                 <button
-                  onClick={() => onSelectCountry(c.id)}
-                  className="hover:text-teal-300 transition-colors flex items-center gap-1.5"
+                  onClick={() => onNavigatePath(`/country/${c.slug}`)}
+                  className="hover:text-teal-300 transition-colors text-left"
                 >
-                  <span>{c.flag}</span>
-                  <span>{c.name} Jobs</span>
+                  {c.name} Jobs
                 </button>
               </li>
             ))}
           </ul>
         </div>
 
-        {/* Col 3: Popular Classified Sectors */}
-        <div className="space-y-2">
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider mb-2">
-            Popular Job Categories
+        {/* Column 3: Top Job Categories */}
+        <div className="space-y-2.5">
+          <h3 className="font-bold text-white text-xs uppercase tracking-wider">
+            Job Categories
           </h3>
-          <ul className="space-y-1.5 text-xs text-slate-400">
-            <li>Civil & Structural Engineering</li>
-            <li>IT, React & Cloud Software</li>
-            <li>General & VAT Accountants</li>
-            <li>Licensed Staff Nurses (SCFHS/DHA)</li>
-            <li>Heavy & Light Vehicle Drivers</li>
-            <li>Specialty Baristas & Hotel F&B</li>
-            <li>Oil & Gas Rig Technicians</li>
-          </ul>
-        </div>
-
-        {/* Col 4: Trust, Safety & Rules */}
-        <div className="space-y-2">
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider mb-2">
-            Expat Safety & Policies
-          </h3>
-          <ul className="space-y-1.5 text-xs">
+          <ul className="space-y-1.5">
+            {PUBLIC_JOB_CATEGORIES.slice(0, 6).map(cat => (
+              <li key={cat.slug}>
+                <button
+                  onClick={() => onNavigatePath(`/category/${cat.slug}`)}
+                  className="hover:text-teal-300 transition-colors text-left"
+                >
+                  {cat.name}
+                </button>
+              </li>
+            ))}
             <li>
               <button
-                onClick={onOpenSafetyGuide}
-                className="hover:text-teal-300 transition-colors flex items-center gap-1 text-teal-400 font-semibold"
+                onClick={() => onNavigatePath('/categories')}
+                className="text-teal-400 hover:text-teal-300 font-semibold transition-colors text-left"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Anti-Scam Guidelines</span>
-              </button>
-            </li>
-            <li>Qiwa Transfer Protocol (KSA)</li>
-            <li>MOHRE Standard Contracts (UAE)</li>
-            <li>Labor Law Compliance</li>
-            <li>
-              <button
-                onClick={() => onOpenLegal?.('privacy')}
-                className="hover:text-teal-300 transition-colors"
-              >
-                Privacy Policy & AdSense Disclosure
-              </button>
-            </li>
-            <li>
-              <button
-                onClick={() => onOpenLegal?.('terms')}
-                className="hover:text-teal-300 transition-colors"
-              >
-                Terms of Service & Anti-Fee Rules
-              </button>
-            </li>
-            <li>
-              <button
-                onClick={() => onOpenAuth?.('signup')}
-                className="hover:text-teal-300 transition-colors font-medium text-teal-400"
-              >
-                Join
+                View All 30 Categories →
               </button>
             </li>
           </ul>
         </div>
 
+        {/* Column 4: Career Resources */}
+        <div className="space-y-2.5">
+          <h3 className="font-bold text-white text-xs uppercase tracking-wider">
+            Career Advice
+          </h3>
+          <ul className="space-y-1.5">
+            {CAREER_ARTICLES.slice(0, 5).map(art => (
+              <li key={art.slug}>
+                <button
+                  onClick={() => onNavigatePath(`/career-advice/${art.slug}`)}
+                  className="hover:text-teal-300 transition-colors text-left line-clamp-1"
+                >
+                  {art.title}
+                </button>
+              </li>
+            ))}
+            <li>
+              <button
+                onClick={() => onNavigatePath('/career-advice')}
+                className="text-teal-400 hover:text-teal-300 font-semibold transition-colors text-left"
+              >
+                All Career Articles →
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        {/* Column 5: Public Trust & Legal Pages */}
+        <div className="space-y-2.5">
+          <h3 className="font-bold text-white text-xs uppercase tracking-wider">
+            Company & Legal
+          </h3>
+          <ul className="space-y-1.5">
+            <li>
+              <button onClick={() => onNavigatePath('/about')} className="hover:text-teal-300 transition-colors">
+                About Gulfaro
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigatePath('/contact')} className="hover:text-teal-300 transition-colors">
+                Contact Us
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigatePath('/privacy-policy')} className="hover:text-teal-300 transition-colors">
+                Privacy Policy
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigatePath('/terms')} className="hover:text-teal-300 transition-colors">
+                Terms and Conditions
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigatePath('/disclaimer')} className="hover:text-teal-300 transition-colors">
+                Disclaimer
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigatePath('/cookie-policy')} className="hover:text-teal-300 transition-colors">
+                Cookie Policy
+              </button>
+            </li>
+            <li>
+              <button onClick={onOpenSafetyGuide} className="text-teal-400 hover:text-teal-300 font-semibold transition-colors">
+                Anti-Scam Hiring Guide
+              </button>
+            </li>
+            {onOpenInstall && (
+              <li className="pt-2 border-t border-slate-800">
+                <PWAInstallButton onClick={onOpenInstall} variant="footer" />
+              </li>
+            )}
+          </ul>
+        </div>
       </div>
 
       {/* Bottom Copyright */}
       <div className="border-t border-slate-800/80 px-4 sm:px-6 py-5">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500">
-          <p>© {new Date().getFullYear()} GULFARO. All rights reserved. GCC Job Classifieds Marketplace.</p>
-          <p className="flex items-center gap-2">
-            <span>Saudi Arabia</span>
+          <p>{cmsOverrides?.footerCopyright || `© ${new Date().getFullYear()} GULFARO. All rights reserved.`}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={() => { onSelectCountry('all'); onNavigatePath('/'); }} className="hover:text-slate-300">
+              All GCC Jobs
+            </button>
             <span>·</span>
-            <span>United Arab Emirates</span>
+            <button onClick={() => onNavigatePath('/privacy-policy')} className="hover:text-slate-300">
+              Privacy
+            </button>
             <span>·</span>
-            <span>Qatar</span>
+            <button onClick={() => onNavigatePath('/terms')} className="hover:text-slate-300">
+              Terms
+            </button>
             <span>·</span>
-            <span>Kuwait</span>
-            <span>·</span>
-            <span>Bahrain</span>
-            <span>·</span>
-            <span>Oman</span>
-          </p>
+            <button onClick={() => onNavigatePath('/cookie-policy')} className="hover:text-slate-300">
+              Cookies
+            </button>
+          </div>
         </div>
       </div>
-
     </footer>
   );
 };

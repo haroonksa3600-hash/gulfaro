@@ -1,0 +1,40 @@
+{
+  "id": "/",
+  "name": "Gulfaro – GCC Job Portal & Career Resources",
+  "short_name": "Gulfaro",
+  "description": "Job vacancies and career resources across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman with direct employer email and phone contact.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#091e3a",
+  "theme_color": "#091e3a",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": [
+    "business",
+    "jobs",
+    "recruitment",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

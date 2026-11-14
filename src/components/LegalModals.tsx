@@ -32,7 +32,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ type, onClose }) => {
               <div>
                 <h3 className="font-bold text-sm text-slate-900 mb-1">1. Information We Collect</h3>
                 <p>
-                  Gulfaro ("we", "our") collects information provided by advertisers and job seekers, including names, contact emails, direct WhatsApp numbers, job titles, and resume credentials. We operate transparently across the six GCC countries: Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.
+                  Gulfaro ("we", "our") collects information provided by employers and users, including names, contact emails, phone numbers, and job listing details. We operate transparently across the six GCC countries: Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.
                 </p>
               </div>
 
@@ -56,7 +56,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ type, onClose }) => {
               <div>
                 <h3 className="font-bold text-sm text-slate-900 mb-1">3. Direct Contact Disclosure</h3>
                 <p>
-                  When you submit your phone or WhatsApp number on an advertisement or job application, you understand and agree that employers and candidates may contact you directly through third-party services like WhatsApp and telephony carriers.
+                  When you publish an employer contact email or phone number on a job listing, candidates may contact you directly via email or telephone carriers.
                 </p>
               </div>
 

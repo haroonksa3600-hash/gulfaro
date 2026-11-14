@@ -1,28 +1,26 @@
 import React, { useState } from 'react';
-import { User, JobAd, JobApplication, GCC_COUNTRIES } from '../types/job';
+import { User, JobAd, GCC_COUNTRIES } from '../types/job';
 import { storageService } from '../services/storage';
 import { 
   Building, 
-  Bookmark, 
-  Send, 
-  UserCheck, 
-  Clock, 
   Trash2, 
   RefreshCw, 
   Sparkles, 
-  MessageCircle, 
-  PhoneCall, 
-  FileText, 
-  CheckCircle2, 
-  ExternalLink,
   PlusCircle,
-  UserPlus
+  UserPlus,
+  ShieldCheck,
+  AlertCircle,
+  KeyRound,
+  Loader2,
+  Check,
+  Pencil
 } from 'lucide-react';
 
 interface UserDashboardProps {
   currentUser: User | null;
   onOpenPostJob: () => void;
   onSelectJob: (job: JobAd) => void;
+  onEditJob?: (job: JobAd) => void;
   onOpenAuth?: (mode: 'login' | 'signup') => void;
 }
 
@@ -30,6 +28,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   currentUser,
   onOpenPostJob,
   onSelectJob,
+  onEditJob,
   onOpenAuth
 }) => {
   if (!currentUser) {
@@ -57,22 +56,78 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     );
   }
 
-  const isEmployer = currentUser.role === 'employer';
-  const isSeeker = currentUser.role === 'job_seeker';
+  const [activeUser, setActiveUser] = useState<User>(currentUser);
+  const isEmployer = activeUser.role === 'employer';
+  const isSeeker = activeUser.role === 'job_seeker';
 
-  const [activeTab, setActiveTab] = useState<'my_ads' | 'applications_received' | 'saved_jobs' | 'my_applications' | 'profile'>(
+  // Email Verification Modal State
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isSubmittingCode, setIsSubmittingCode] = useState(false);
+  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'my_ads' | 'saved_jobs'>(
     isEmployer ? 'my_ads' : 'saved_jobs'
   );
 
   const [jobs, setJobs] = useState<JobAd[]>(storageService.getJobs());
-  const [applications, setApplications] = useState<JobApplication[]>(storageService.getApplications());
   const [savedJobIds, setSavedJobIds] = useState<string[]>(storageService.getSavedJobIds());
 
   // Refresh data helper
   const reloadData = () => {
     setJobs(storageService.getJobs());
-    setApplications(storageService.getApplications());
     setSavedJobIds(storageService.getSavedJobIds());
+  };
+
+  // Send verification code
+  const handleSendVerificationCode = async () => {
+    setIsSendingCode(true);
+    setVerifyError(null);
+    setVerifyMessage(null);
+    try {
+      const res = await storageService.sendEmployerVerificationAsync(activeUser.email);
+      if (res.success) {
+        setVerifyMessage(res.message || 'Verification code sent to your email.');
+      } else {
+        setVerifyError(res.message || 'Failed to dispatch verification code.');
+      }
+    } catch {
+      setVerifyError('Network error while requesting verification.');
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  // Submit verification code
+  const handleSubmitVerificationCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verificationCode.trim()) {
+      setVerifyError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setIsSubmittingCode(true);
+    setVerifyError(null);
+    try {
+      const res = await storageService.verifyEmployerEmailAsync(activeUser.email, verificationCode.trim());
+      if (res.success) {
+        setActiveUser({ ...activeUser, emailVerified: true, emailVerifiedAt: new Date().toISOString() });
+        setVerifyMessage('Corporate email verified successfully! Your job classifieds now display the Verified Employer badge.');
+        reloadData();
+        setTimeout(() => {
+          setShowVerifyModal(false);
+          setVerifyMessage(null);
+          setVerificationCode('');
+        }, 2200);
+      } else {
+        setVerifyError(res.error || 'Invalid or expired verification code.');
+      }
+    } catch {
+      setVerifyError('An error occurred during verification.');
+    } finally {
+      setIsSubmittingCode(false);
+    }
   };
 
   // Employer Actions
@@ -89,24 +144,18 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   const handleToggleFeatured = (jobId: string) => {
-    storageService.adminToggleFeatured(jobId);
-    reloadData();
-  };
-
-  const handleUpdateAppStatus = (appId: string, status: JobApplication['status']) => {
-    storageService.updateApplicationStatus(appId, status);
+    const target = jobs.find(j => j.id === jobId);
+    if (!target) return;
+    storageService.updateJob(jobId, {
+      isFeatured: !target.isFeatured,
+      packageType: !target.isFeatured ? 'featured' : 'standard'
+    });
     reloadData();
   };
 
   // Filter jobs relevant to current user
-  const myAds = jobs.filter(j => j.userId === currentUser.id || currentUser.role === 'employer');
-  const myApplicationsReceived = applications.filter(a => {
-    const job = jobs.find(j => j.id === a.jobId);
-    return job && (job.userId === currentUser.id || currentUser.role === 'employer');
-  });
-
+  const myAds = jobs.filter(j => j.userId === activeUser.id || activeUser.role === 'employer');
   const savedJobsList = jobs.filter(j => savedJobIds.includes(j.id));
-  const mySubmittedApplications = applications.filter(a => a.applicantUserId === currentUser.id);
 
   return (
     <div className="bg-slate-50 min-h-screen py-8">
@@ -115,65 +164,114 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         {/* User Profile Header Card */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-teal-400 font-extrabold text-2xl flex items-center justify-center border border-slate-700 shadow-sm">
-              {currentUser.name.charAt(0)}
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-teal-400 font-extrabold text-2xl flex items-center justify-center border border-slate-700 shadow-sm shrink-0">
+              {activeUser.name.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-slate-900">{currentUser.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold text-slate-900">{activeUser.name}</h1>
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 uppercase tracking-wide">
-                  {currentUser.role.replace('_', ' ')}
+                  {activeUser.role.replace('_', ' ')}
                 </span>
+
+                {/* Email Verification Status Indicator */}
+                {isEmployer && (
+                  activeUser.emailVerified ? (
+                    <span 
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs"
+                      title="Corporate email validated via Gulfaro Email Security Gateway"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Verified Employer (Email Validated)</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowVerifyModal(true)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                      title="Click to verify corporate email and unlock the Verified Employer badge"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>Verify Email to Get Badge</span>
+                    </button>
+                  )
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {currentUser.companyName ? `${currentUser.companyName} · ` : ''}
-                {currentUser.city}, {GCC_COUNTRIES[currentUser.country]?.name} · {currentUser.email}
+                {activeUser.companyName ? `${activeUser.companyName} · ` : ''}
+                {activeUser.city}, {GCC_COUNTRIES[activeUser.country]?.name} · {activeUser.email}
               </p>
-              {currentUser.headline && (
+              {activeUser.headline && (
                 <p className="text-xs text-slate-700 font-medium mt-1">
-                  {currentUser.headline}
+                  {activeUser.headline}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenPostJob}
-              className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-xs transition-colors"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Post New Classified</span>
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isEmployer && !activeUser.emailVerified && (
+              <button
+                onClick={() => setShowVerifyModal(true)}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3.5 py-2.5 rounded-lg shadow-xs transition-colors"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Verify Corporate Email</span>
+              </button>
+            )}
+            {isEmployer && (
+              <button
+                onClick={onOpenPostJob}
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-xs transition-colors"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Post New Classified</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Action Callout if Employer Email is Unverified */}
+        {isEmployer && !activeUser.emailVerified && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-100 text-amber-700 rounded-lg shrink-0 mt-0.5">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-bold text-sm text-amber-950">
+                  Boost Candidate Trust with the "Verified Employer" Badge
+                </h2>
+                <p className="text-xs text-amber-800 leading-relaxed mt-0.5">
+                  Your corporate email (<strong>{activeUser.email}</strong>) is currently pending validation. Verify ownership via a 6-digit code to award all your active job advertisements the official <strong>Verified Employer</strong> trust badge.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowVerifyModal(true);
+                handleSendVerificationCode();
+              }}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors shrink-0"
+            >
+              Verify Email Now
+            </button>
+          </div>
+        )}
 
         {/* Dashboard Navigation Tabs */}
         <div className="flex border-b border-slate-200 mb-6 overflow-x-auto text-xs font-semibold gap-2">
           {isEmployer && (
-            <>
-              <button
-                onClick={() => setActiveTab('my_ads')}
-                className={`pb-3 px-3 transition-colors border-b-2 whitespace-nowrap ${
-                  activeTab === 'my_ads'
-                    ? 'border-teal-600 text-teal-700 font-bold'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                My Advertisements ({myAds.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('applications_received')}
-                className={`pb-3 px-3 transition-colors border-b-2 whitespace-nowrap ${
-                  activeTab === 'applications_received'
-                    ? 'border-teal-600 text-teal-700 font-bold'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Candidates & Leads ({myApplicationsReceived.length})
-              </button>
-            </>
+            <button
+              onClick={() => setActiveTab('my_ads')}
+              className={`pb-3 px-3 transition-colors border-b-2 whitespace-nowrap ${
+                activeTab === 'my_ads'
+                  ? 'border-teal-600 text-teal-700 font-bold'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              My Advertisements ({myAds.length})
+            </button>
           )}
 
           <button
@@ -185,17 +283,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             }`}
           >
             Saved Bookmarks ({savedJobsList.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab('my_applications')}
-            className={`pb-3 px-3 transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === 'my_applications'
-                ? 'border-teal-600 text-teal-700 font-bold'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            My Job Applications ({mySubmittedApplications.length})
           </button>
         </div>
 
@@ -279,6 +366,17 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           View Public Ad
                         </button>
 
+                        {isEmployer && onEditJob && (
+                          <button
+                            onClick={() => onEditJob(job)}
+                            className="text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200 transition-colors flex items-center gap-1"
+                            title="Edit this job advertisement"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                        )}
+
                         <button
                           onClick={() => handleRenew(job.id)}
                           className="text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
@@ -312,82 +410,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     </div>
                   );
                 })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: Employer - Applications Received */}
-        {activeTab === 'applications_received' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-              <span>Direct candidate submissions for your posted vacancies</span>
-              <span className="font-semibold text-slate-700">{myApplicationsReceived.length} Leads</span>
-            </div>
-
-            {myApplicationsReceived.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500 text-sm">
-                No candidate applications received yet. Qualified candidates can submit directly or chat via WhatsApp.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myApplicationsReceived.map(app => (
-                  <div key={app.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                      <div>
-                        <span className="text-[11px] font-bold text-teal-600 uppercase">Applied for: {app.jobTitle}</span>
-                        <h3 className="font-bold text-base text-slate-900 mt-0.5">{app.applicantName}</h3>
-                        <p className="text-xs text-slate-500">
-                          {app.currentCity}, {GCC_COUNTRIES[app.currentCountry]?.name} · Experience: {app.yearsExperience} · Iqama: <span className="capitalize font-medium text-slate-700">{app.iqamaStatus}</span>
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={app.status}
-                          onChange={(e) => handleUpdateAppStatus(app.id, e.target.value as any)}
-                          className="text-xs font-semibold px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-800"
-                        >
-                          <option value="new">Status: New</option>
-                          <option value="reviewed">Status: Reviewed</option>
-                          <option value="shortlisted">Status: Shortlisted</option>
-                          <option value="rejected">Status: Rejected</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 leading-relaxed">
-                      "{app.coverNote}"
-                    </p>
-
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs">
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <FileText className="w-4 h-4 text-teal-600" />
-                        <span className="font-mono text-slate-800">{app.resumeFileName || 'CV_Document.pdf'}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={`https://wa.me/${app.applicantWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${app.applicantName}, regarding your application for ${app.jobTitle} on Gulfaro:`)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          <span>WhatsApp Applicant</span>
-                        </a>
-
-                        <a
-                          href={`tel:${app.applicantPhone.replace(/\s+/g, '')}`}
-                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold flex items-center gap-1"
-                        >
-                          <PhoneCall className="w-3.5 h-3.5 text-teal-400" />
-                          <span>Call</span>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>
@@ -454,53 +476,116 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 4: My Submitted Applications */}
-        {activeTab === 'my_applications' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-              <span>Applications you submitted directly to GCC employers</span>
-              <span className="font-semibold text-slate-700">{mySubmittedApplications.length} Applications</span>
+      </div>
+
+      {/* Employer Corporate Email Verification Modal */}
+      {showVerifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative overflow-hidden">
+            {/* Top decorative gradient bar */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-600" />
+
+            <div className="text-center mb-5">
+              <div className="w-13 h-13 mx-auto bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center mb-3 shadow-xs">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                Verify Employer Corporate Email
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                Validate <span className="font-semibold text-slate-800">{activeUser.email}</span> to display the official <strong>Verified Employer</strong> badge on all your job vacancies.
+              </p>
             </div>
 
-            {mySubmittedApplications.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500 text-sm">
-                You haven't submitted any applications through the portal yet.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {mySubmittedApplications.map(app => (
-                  <div key={app.id} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div>
-                      <span className="text-[11px] font-bold text-teal-600 uppercase">
-                        {app.companyName}
-                      </span>
-                      <h3 className="font-bold text-base text-slate-900">
-                        {app.jobTitle}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Submitted on {new Date(app.appliedAt).toLocaleDateString()} · Iqama Status: <span className="capitalize">{app.iqamaStatus}</span>
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full capitalize ${
-                        app.status === 'shortlisted' 
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : app.status === 'reviewed'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {app.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+            {/* Success Message Banner */}
+            {verifyMessage && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{verifyMessage}</span>
               </div>
             )}
-          </div>
-        )}
 
-      </div>
+            {/* Error Message Banner */}
+            {verifyError && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{verifyError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitVerificationCode} className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700">
+                    6-Digit Verification Code
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSendVerificationCode}
+                    disabled={isSendingCode}
+                    className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 hover:underline disabled:opacity-50"
+                  >
+                    {isSendingCode ? 'Sending...' : 'Send / Resend Code'}
+                  </button>
+                </div>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="e.g. 549821"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-base font-mono font-bold tracking-widest text-center text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 text-center">
+                  Check your inbox for an email from <strong>Gulfaro Official</strong>.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVerifyModal(false);
+                    setVerifyError(null);
+                    setVerifyMessage(null);
+                  }}
+                  className="w-1/3 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-xs rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCode || !verificationCode.trim()}
+                  className="w-2/3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  {isSubmittingCode ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Confirm & Activate Badge</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 text-center">
+              <span className="text-[10px] text-slate-400">
+                Email verification secured by Gulfaro GCC Corporate Standards
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -1,0 +1,95 @@
+[
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "PERMANENT_DELETE_USER",
+    "targetType": "employer",
+    "targetId": "usr-1794598977824-sr2z",
+    "details": "Permanently deleted user verify.emp.1794598977675@gulfaro-test.example.com",
+    "ip": "127.0.0.1",
+    "id": "aud-1794598978828-850388",
+    "createdAt": "2026-11-13T19:42:58.828Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "DOWNLOAD_DATABASE_BACKUP",
+    "targetType": "backup",
+    "details": "Exported JSON backup (20 users, 12 jobs)",
+    "ip": "127.0.0.1",
+    "id": "aud-1794598978813-bfcd1c",
+    "createdAt": "2026-11-13T19:42:58.813Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "SUPER_ADMIN_LOGIN",
+    "targetType": "session",
+    "details": "Authenticated into Super Admin Portal",
+    "ip": "127.0.0.1",
+    "id": "aud-1794598978802-3b38b4",
+    "createdAt": "2026-11-13T19:42:58.802Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "SUPER_ADMIN_LOGIN",
+    "targetType": "session",
+    "details": "Authenticated into Super Admin Portal",
+    "ip": "127.0.0.1",
+    "id": "aud-1794534229185-57dab7",
+    "createdAt": "2026-11-13T01:43:49.185Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "DELETE_SUB_ADMIN",
+    "targetType": "admin",
+    "targetId": "sa-1794533582830-ur8",
+    "details": "Deleted sub-admin \"temp_mod_verify\"",
+    "ip": "127.0.0.1",
+    "id": "aud-1794533585371-5d50fe",
+    "createdAt": "2026-11-13T01:33:05.371Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "CREATE_SUB_ADMIN",
+    "targetType": "admin",
+    "targetId": "sa-1794533582830-ur8",
+    "details": "Created moderator admin \"temp_mod_verify\" (temp_mod_verify@gulfaro.com)",
+    "ip": "127.0.0.1",
+    "id": "aud-1794533583242-ea38cd",
+    "createdAt": "2026-11-13T01:33:03.242Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "DOWNLOAD_DATABASE_BACKUP",
+    "targetType": "backup",
+    "details": "Exported JSON backup (19 users, 12 jobs)",
+    "ip": "127.0.0.1",
+    "id": "aud-1794533582822-07ea0c",
+    "createdAt": "2026-11-13T01:33:02.822Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "EXPORT_CSV",
+    "targetType": "jobs",
+    "details": "Exported jobs dataset to CSV",
+    "ip": "127.0.0.1",
+    "id": "aud-1794533582818-33b1e5",
+    "createdAt": "2026-11-13T01:33:02.818Z"
+  },
+  {
+    "adminId": "sa-owner-1",
+    "adminUsername": "Haroon555",
+    "action": "SUPER_ADMIN_LOGIN",
+    "targetType": "session",
+    "details": "Authenticated into Super Admin Portal",
+    "ip": "127.0.0.1",
+    "id": "aud-1794533582696-8569e8",
+    "createdAt": "2026-11-13T01:33:02.696Z"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "sas-1794598978801-bf6a2f57",
+    "tokenHash": "35dfab790babd4875816579cf0018ea8f2dd494e3934c1351e729fc6e2280e19",
+    "adminId": "sa-owner-1",
+    "rememberMe": false,
+    "createdAt": 1794598978801,
+    "lastActivityAt": 1794598978827,
+    "expiresAt": 1794642178801,
+    "ip": "127.0.0.1",
+    "userAgent": "node",
+    "revoked": true
+  }
+]

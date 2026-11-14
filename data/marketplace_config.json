@@ -1,0 +1,468 @@
+{
+  "countries": [
+    {
+      "id": "saudi-arabia",
+      "name": "Saudi Arabia",
+      "nameAr": "المملكة العربية السعودية",
+      "flag": "🇸🇦",
+      "code": "SA",
+      "currency": "SAR",
+      "currencyCode": "SAR",
+      "phoneCode": "+966",
+      "topCities": [
+        "Riyadh",
+        "Jeddah",
+        "Dammam",
+        "Khobar",
+        "Mecca",
+        "Medina",
+        "Jubail",
+        "Yanbu",
+        "Tabuk",
+        "Al-Ahsa"
+      ],
+      "capital": "Riyadh",
+      "tagline": "Kingdom of Saudi Arabia · Vision 2030 Hub",
+      "enabled": true
+    },
+    {
+      "id": "uae",
+      "name": "United Arab Emirates",
+      "nameAr": "الإمارات العربية المتحدة",
+      "flag": "🇦🇪",
+      "code": "AE",
+      "currency": "AED",
+      "currencyCode": "AED",
+      "phoneCode": "+971",
+      "topCities": [
+        "Dubai",
+        "Abu Dhabi",
+        "Sharjah",
+        "Ajman",
+        "Ras Al Khaimah",
+        "Fujairah",
+        "Al Ain"
+      ],
+      "capital": "Abu Dhabi",
+      "tagline": "UAE · Global Business & Innovation Hub",
+      "enabled": true
+    },
+    {
+      "id": "qatar",
+      "name": "Qatar",
+      "nameAr": "دولة قطر",
+      "flag": "🇶🇦",
+      "code": "QA",
+      "currency": "QAR",
+      "currencyCode": "QAR",
+      "phoneCode": "+974",
+      "topCities": [
+        "Doha",
+        "Al Rayyan",
+        "Al Wakrah",
+        "Lusail",
+        "Al Khor",
+        "Umm Salal"
+      ],
+      "capital": "Doha",
+      "tagline": "Qatar · Energy, Infrastructure & World Trade",
+      "enabled": true
+    },
+    {
+      "id": "kuwait",
+      "name": "Kuwait",
+      "nameAr": "دولة الكويت",
+      "flag": "🇰🇼",
+      "code": "KW",
+      "currency": "KWD",
+      "currencyCode": "KWD",
+      "phoneCode": "+965",
+      "topCities": [
+        "Kuwait City",
+        "Hawalli",
+        "Salmiya",
+        "Al Ahmadi",
+        "Farwaniya",
+        "Al Jahra"
+      ],
+      "capital": "Kuwait City",
+      "tagline": "Kuwait · High Value & Strategic Commerce",
+      "enabled": true
+    },
+    {
+      "id": "bahrain",
+      "name": "Bahrain",
+      "nameAr": "مملكة البحرين",
+      "flag": "🇧🇭",
+      "code": "BH",
+      "currency": "BHD",
+      "currencyCode": "BHD",
+      "phoneCode": "+973",
+      "topCities": [
+        "Manama",
+        "Riffa",
+        "Muharraq",
+        "Hamad Town",
+        "Seef",
+        "Juffair"
+      ],
+      "capital": "Manama",
+      "tagline": "Bahrain · Financial Gateway of the Gulf",
+      "enabled": true
+    },
+    {
+      "id": "oman",
+      "name": "Oman",
+      "nameAr": "سلطنة عُمان",
+      "flag": "🇴🇲",
+      "code": "OM",
+      "currency": "OMR",
+      "currencyCode": "OMR",
+      "phoneCode": "+968",
+      "topCities": [
+        "Muscat",
+        "Salalah",
+        "Sohar",
+        "Nizwa",
+        "Sur",
+        "Seeb",
+        "Barka"
+      ],
+      "capital": "Muscat",
+      "tagline": "Sultanate of Oman · Maritime & Industrial Hub",
+      "enabled": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "accounting-finance",
+      "name": "Accounting & Finance",
+      "nameAr": "المحاسبة والمالية",
+      "iconName": "Calculator",
+      "description": "Corporate accounting, VAT/Zakat compliance, auditing, and financial analysis across the GCC.",
+      "popularRoles": ["Accountant", "Auditor", "Financial Analyst", "VAT & Tax Specialist"],
+      "enabled": true
+    },
+    {
+      "id": "administration-office-support",
+      "name": "Administration & Office Support",
+      "nameAr": "الإدارة والدعم المكتبي",
+      "iconName": "ClipboardList",
+      "description": "Office administration, executive assistance, data entry, and document control roles.",
+      "popularRoles": ["Secretary", "Data Entry Operator", "Office Assistant", "Document Controller"],
+      "enabled": true
+    },
+    {
+      "id": "engineering",
+      "name": "Engineering",
+      "nameAr": "الهندسة",
+      "iconName": "Compass",
+      "description": "Civil, mechanical, electrical, chemical, structural, and industrial engineering vacancies.",
+      "popularRoles": ["Civil Engineer", "Mechanical Engineer", "Electrical Engineer", "Chemical Engineer"],
+      "enabled": true
+    },
+    {
+      "id": "construction-building",
+      "name": "Construction & Building",
+      "nameAr": "البناء والتشييد",
+      "iconName": "HardHat",
+      "description": "Site supervision, skilled building trades, MEP installation, and civil works across the Gulf.",
+      "popularRoles": ["Mason", "Carpenter", "Plumber", "Painter", "Site Supervisor"],
+      "enabled": true
+    },
+    {
+      "id": "information-technology",
+      "name": "Information Technology (IT)",
+      "nameAr": "تقنية المعلومات",
+      "iconName": "Cpu",
+      "description": "Software development, IT support, networking, cloud systems, and cybersecurity.",
+      "popularRoles": ["Software Developer", "IT Support", "Network Engineer", "Cybersecurity Analyst"],
+      "enabled": true
+    },
+    {
+      "id": "sales-business-development",
+      "name": "Sales & Business Development",
+      "nameAr": "المبيعات وتطوير الأعمال",
+      "iconName": "TrendingUp",
+      "description": "B2B enterprise sales, field sales representatives, account managers, and business growth.",
+      "popularRoles": ["Sales Executive", "Sales Manager", "Sales Representative", "Key Account Manager"],
+      "enabled": true
+    },
+    {
+      "id": "marketing-advertising",
+      "name": "Marketing & Advertising",
+      "nameAr": "التسويق والإعلان",
+      "iconName": "Megaphone",
+      "description": "Digital marketing, social media management, brand strategy, SEO, and advertising campaigns.",
+      "popularRoles": ["Digital Marketing Specialist", "Social Media Manager", "Brand Manager"],
+      "enabled": true
+    },
+    {
+      "id": "human-resources",
+      "name": "Human Resources (HR)",
+      "nameAr": "الموارد البشرية",
+      "iconName": "Users",
+      "description": "Talent acquisition, HR operations, employee relations, and GCC labor portal compliance.",
+      "popularRoles": ["HR Officer", "Recruiter", "HR Manager", "PRO / Government Relations"],
+      "enabled": true
+    },
+    {
+      "id": "healthcare-medical",
+      "name": "Healthcare & Medical",
+      "nameAr": "الرعاية الصحية والطبية",
+      "iconName": "Stethoscope",
+      "description": "Licensed doctors, nurses, pharmacists, medical technicians, and allied healthcare staff.",
+      "popularRoles": ["Doctor", "Nurse", "Pharmacist", "Medical Technician"],
+      "enabled": true
+    },
+    {
+      "id": "education-training",
+      "name": "Education & Training",
+      "nameAr": "التعليم والتدريس",
+      "iconName": "GraduationCap",
+      "description": "International school teachers, subject specialists, university faculty, and corporate trainers.",
+      "popularRoles": ["School Teacher", "Subject Teacher", "Corporate Trainer", "Academic Coordinator"],
+      "enabled": true
+    },
+    {
+      "id": "hospitality-tourism",
+      "name": "Hospitality & Tourism",
+      "nameAr": "الضيافة والسياحة",
+      "iconName": "Hotel",
+      "description": "Hotel operations, front office reception, housekeeping, guest concierge, and travel agencies.",
+      "popularRoles": ["Chef", "Waiter", "Receptionist", "Housekeeping"],
+      "enabled": true
+    },
+    {
+      "id": "restaurant-food-services",
+      "name": "Restaurant & Food Services",
+      "nameAr": "المطاعم والخدمات الغذائية",
+      "iconName": "Utensils",
+      "description": "Chefs, line cooks, baristas, catering staff, and restaurant floor management.",
+      "popularRoles": ["Head Chef / Sous Chef", "Barista", "Restaurant Manager", "Waiter / Server"],
+      "enabled": true
+    },
+    {
+      "id": "customer-service-call-center",
+      "name": "Customer Service & Call Center",
+      "nameAr": "خدمة العملاء ومراكز الاتصال",
+      "iconName": "Headphones",
+      "description": "Bilingual customer care agents, inbound call centers, helpdesk teams, and client support.",
+      "popularRoles": ["Customer Service Representative", "Call Center Agent", "Client Support Officer"],
+      "enabled": true
+    },
+    {
+      "id": "driving-transportation",
+      "name": "Driving & Transportation",
+      "nameAr": "القيادة والنقل",
+      "iconName": "Car",
+      "description": "Licensed heavy truck drivers, light vehicle chauffeurs, delivery riders, and fleet drivers.",
+      "popularRoles": ["Heavy Driver", "Light Driver", "Delivery Driver", "Trailer / Tanker Driver"],
+      "enabled": true
+    },
+    {
+      "id": "logistics-supply-chain",
+      "name": "Logistics & Supply Chain",
+      "nameAr": "اللوجستيات وسلسلة الإمداد",
+      "iconName": "Truck",
+      "description": "Warehousing, storekeeping, freight forwarding, customs clearance, and inventory control.",
+      "popularRoles": ["Warehouse Supervisor", "Storekeeper", "Supply Chain Coordinator", "Forklift Operator"],
+      "enabled": true
+    },
+    {
+      "id": "security-safety",
+      "name": "Security & Safety",
+      "nameAr": "الأمن والسلامة",
+      "iconName": "ShieldCheck",
+      "description": "HSE safety officers, site security guards, fire safety technicians, and CCTV monitoring.",
+      "popularRoles": ["HSE / Safety Officer (NEBOSH)", "Security Guard", "Fire & Safety Technician"],
+      "enabled": true
+    },
+    {
+      "id": "oil-gas-energy",
+      "name": "Oil, Gas & Energy",
+      "nameAr": "النفط والغاز والطاقة",
+      "iconName": "Flame",
+      "description": "Upstream drilling, petroleum engineering, instrumentation, pipelines, and renewable solar.",
+      "popularRoles": ["Petroleum / Drilling Engineer", "Mud Engineer", "Instrumentation Technician"],
+      "enabled": true
+    },
+    {
+      "id": "manufacturing-production",
+      "name": "Manufacturing & Production",
+      "nameAr": "التصنيع والإنتاج",
+      "iconName": "Factory",
+      "description": "Factory operations, machine operation, CNC fabrication, assembly lines, and plant supervision.",
+      "popularRoles": ["Production Operator", "Machine Operator", "Factory / Plant Supervisor"],
+      "enabled": true
+    },
+    {
+      "id": "retail-supermarket",
+      "name": "Retail & Supermarket",
+      "nameAr": "التجزئة والأسواق المركزية",
+      "iconName": "ShoppingBag",
+      "description": "Supermarket operations, retail sales associates, cashiers, merchandisers, and store managers.",
+      "popularRoles": ["Store Manager", "Cashier", "Retail Sales Associate", "Merchandiser"],
+      "enabled": true
+    },
+    {
+      "id": "cleaning-maintenance",
+      "name": "Cleaning & Maintenance",
+      "nameAr": "النظافة والصيانة العامة",
+      "iconName": "Sparkles",
+      "description": "Commercial cleaning staff, building janitorial services, facility upkeep, and sanitation.",
+      "popularRoles": ["General Cleaner", "Janitorial Supervisor", "Building Maintenance Worker"],
+      "enabled": true
+    },
+    {
+      "id": "electrical-mechanical",
+      "name": "Electrical & Mechanical",
+      "nameAr": "الأعمال الكهربائية والميكانيكية",
+      "iconName": "Wrench",
+      "description": "HVAC chiller technicians, industrial electricians, MEP technicians, welders, and mechanics.",
+      "popularRoles": ["HVAC / Chiller Technician", "Industrial Electrician", "MEP Technician", "Certified Welder"],
+      "enabled": true
+    },
+    {
+      "id": "architecture-interior-design",
+      "name": "Architecture & Interior Design",
+      "nameAr": "العمارة والتصميم الداخلي",
+      "iconName": "Ruler",
+      "description": "Architects, interior fit-out designers, BIM/CAD drafters, and 3D visualization specialists.",
+      "popularRoles": ["Architect", "Interior Designer", "AutoCAD / BIM Draftsman"],
+      "enabled": true
+    },
+    {
+      "id": "legal-compliance",
+      "name": "Legal & Compliance",
+      "nameAr": "الشؤون القانونية والامتثال",
+      "iconName": "Scale",
+      "description": "Corporate legal counsel, lawyers, contract specialists, and regulatory compliance officers.",
+      "popularRoles": ["Corporate Lawyer", "Legal Advisor / Counsel", "Contract Administrator"],
+      "enabled": true
+    },
+    {
+      "id": "real-estate-property-management",
+      "name": "Real Estate & Property Management",
+      "nameAr": "العقارات وإدارة الممتلكات",
+      "iconName": "Building2",
+      "description": "Real estate brokers, leasing consultants, property managers, and community association managers.",
+      "popularRoles": ["Real Estate Agent / Broker", "Property Manager", "Leasing Consultant"],
+      "enabled": true
+    },
+    {
+      "id": "procurement-purchasing",
+      "name": "Procurement & Purchasing",
+      "nameAr": "المشتريات والتوريد",
+      "iconName": "ClipboardCheck",
+      "description": "Procurement engineers, purchasing officers, vendor sourcing, and materials control.",
+      "popularRoles": ["Procurement Officer", "Purchasing Manager", "Buyer / Sourcing Specialist"],
+      "enabled": true
+    },
+    {
+      "id": "quality-control-assurance",
+      "name": "Quality Control & Assurance",
+      "nameAr": "مراقبة وضمان الجودة",
+      "iconName": "BadgeCheck",
+      "description": "QA/QC inspectors, ISO auditors, manufacturing quality control, and laboratory testing.",
+      "popularRoles": ["QA/QC Inspector", "Quality Assurance Manager", "ISO Compliance Auditor"],
+      "enabled": true
+    },
+    {
+      "id": "media-design-creative",
+      "name": "Media, Design & Creative",
+      "nameAr": "الإعلام والتصميم والإبداع",
+      "iconName": "Palette",
+      "description": "Graphic designers, UI/UX designers, video editors, copywriters, and content producers.",
+      "popularRoles": ["Graphic Designer", "UI/UX Designer", "Video Editor / Videographer"],
+      "enabled": true
+    },
+    {
+      "id": "telecommunications",
+      "name": "Telecommunications",
+      "nameAr": "الاتصالات",
+      "iconName": "Radio",
+      "description": "Telecom network engineers, fiber optic splicers, RF optimization, and tower field teams.",
+      "popularRoles": ["Telecom Engineer", "Fiber Optic Technician", "RF Optimization Engineer"],
+      "enabled": true
+    },
+    {
+      "id": "agriculture-farming",
+      "name": "Agriculture & Farming",
+      "nameAr": "الزراعة والثروة الحيوانية",
+      "iconName": "Sprout",
+      "description": "Agricultural engineers, greenhouse specialists, irrigation technicians, and farm supervisors.",
+      "popularRoles": ["Agricultural Engineer", "Farm Manager", "Irrigation Technician"],
+      "enabled": true
+    },
+    {
+      "id": "other-jobs",
+      "name": "Other Jobs",
+      "nameAr": "وظائف أخرى",
+      "iconName": "Briefcase",
+      "description": "General roles, multi-disciplinary coordinators, trainees, and specialized opportunities.",
+      "popularRoles": ["Operations Coordinator", "Intern / Trainee", "General Helper / Labor"],
+      "enabled": true
+    }
+  ],
+  "employmentTypes": [
+    {
+      "id": "full-time",
+      "label": "Full-Time",
+      "enabled": true
+    },
+    {
+      "id": "contract",
+      "label": "Contract / Project-Based",
+      "enabled": true
+    },
+    {
+      "id": "part-time",
+      "label": "Part-Time",
+      "enabled": true
+    },
+    {
+      "id": "walk-in",
+      "label": "Walk-In Interview",
+      "enabled": true
+    },
+    {
+      "id": "remote",
+      "label": "Remote",
+      "enabled": true
+    }
+  ],
+  "experienceLevels": [
+    {
+      "id": "fresher",
+      "label": "Fresher (0 - 1 Yr)",
+      "enabled": true
+    },
+    {
+      "id": "1-3-years",
+      "label": "1 to 3 Years",
+      "enabled": true
+    },
+    {
+      "id": "3-5-years",
+      "label": "3 to 5 Years",
+      "enabled": true
+    },
+    {
+      "id": "5-10-years",
+      "label": "5 to 10 Years",
+      "enabled": true
+    },
+    {
+      "id": "10-plus-years",
+      "label": "10+ Years (Senior)",
+      "enabled": true
+    }
+  ],
+  "salaryRules": {
+    "showSalaryRange": true,
+    "allowNegotiable": true,
+    "requireSalaryForFeatured": false,
+    "defaultCurrency": "SAR"
+  }
+}

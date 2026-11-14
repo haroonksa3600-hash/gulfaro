@@ -1,29 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { JobAd, GCC_COUNTRIES, User } from '../types/job';
+import { getJobCategoryName, jobMatchesCategoryFilter } from '../data/categories';
+import { isJobActiveAndUnexpired } from '../data/gccDirectory';
 import { storageService } from '../services/storage';
 import { AdBanner } from './AdBanner';
-import { 
-  MapPin, 
-  Clock, 
-  Building, 
-  MessageCircle, 
-  PhoneCall, 
-  Mail, 
-  Bookmark, 
-  Share2, 
-  ShieldAlert, 
-  CheckCircle2, 
-  AlertCircle, 
-  Calendar, 
+import {
+  PhoneCall,
+  Mail,
+  Bookmark,
+  Share2,
+  ShieldAlert,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  Calendar,
   ChevronLeft,
-  Briefcase,
-  FileText,
-  UserCheck,
-  Send,
-  Sparkles,
-  Zap,
   Eye,
-  Check
+  Check,
+  Copy,
+  Flag
 } from 'lucide-react';
 
 interface JobDetailViewProps {
@@ -45,310 +40,359 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
   onToggleSave,
   allJobs
 }) => {
-  const [showApplyModal, setShowApplyModal] = useState(false);
-  const [applyName, setApplyName] = useState(currentUser?.name || '');
-  const [applyEmail, setApplyEmail] = useState(currentUser?.email || '');
-  const [applyPhone, setApplyPhone] = useState(currentUser?.phone || '+966 ');
-  const [applyWhatsapp, setApplyWhatsapp] = useState(currentUser?.whatsapp || '+966 ');
-  const [applyIqama, setApplyIqama] = useState<'transferable' | 'non-transferable' | 'visit-visa' | 'employment-visa' | 'citizen-only' | 'any'>('transferable');
-  const [applyExp, setApplyExp] = useState('3-5 years');
-  const [applyCoverNote, setApplyCoverNote] = useState(
-    `Dear Hiring Manager, I am writing to apply for the position of "${job.title}". I am currently based in ${job.city} and available for immediate joining.`
-  );
-  const [applyResumeName, setApplyResumeName] = useState('My_Updated_GCC_Resume.pdf');
-  const [appliedSuccess, setAppliedSuccess] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const countryInfo = GCC_COUNTRIES[job.country];
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCategory, setReportCategory] = useState<'scam_fraud' | 'visa_fee' | 'fake_job' | 'spam' | 'other'>('scam_fraud');
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportEmail, setReportEmail] = useState(currentUser?.email || '');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  // Increment views on load
+  const countryInfo = GCC_COUNTRIES[job.country];
+  const categoryName = getJobCategoryName(job.category, {
+    title: job.title,
+    subcategory: job.subcategory
+  });
+  const isEmployerVerified = storageService.isEmployerVerified(job);
+  const isActiveListing = isJobActiveAndUnexpired(job);
+
   useEffect(() => {
     storageService.incrementViews(job.id);
   }, [job.id]);
 
-  // Inject Schema.org JobPosting JSON-LD into DOM for Google Job Search indexability
-  useEffect(() => {
-    const scriptId = 'google-job-posting-ld';
-    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
-    if (!script) {
-      script = document.createElement('script');
-      script.id = scriptId;
-      script.type = 'application/ld+json';
-      document.head.appendChild(script);
+  const getPublicJobUrl = (): string => {
+    const slugOrId = job.slug || job.id;
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (
+        hostname !== 'localhost' &&
+        hostname !== '127.0.0.1' &&
+        !hostname.includes('ais-dev-') &&
+        !hostname.includes('webcontainer') &&
+        !hostname.includes('local')
+      ) {
+        return `${window.location.origin}/job/${slugOrId}`;
+      }
+    }
+    return `https://gulfaro.com/job/${slugOrId}`;
+  };
+
+  const canonicalShareUrl = getPublicJobUrl();
+
+  const handleShare = async () => {
+    if (typeof navigator !== 'undefined' && navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
+      try {
+        await navigator.share({
+          title: `${job.title} – ${job.company}`,
+          text: `View vacancy on Gulfaro: ${job.title} at ${job.company} (${job.city}, ${countryInfo?.name || 'GCC'})`,
+          url: canonicalShareUrl
+        });
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+        return;
+      } catch {
+        // Fallback to clipboard
+      }
     }
 
-    const jobSchema = {
-      "@context": "https://schema.org/",
-      "@type": "JobPosting",
-      "title": job.title,
-      "description": job.description,
-      "identifier": {
-        "@type": "PropertyValue",
-        "name": "Gulfaro",
-        "value": job.id
-      },
-      "datePosted": job.postedAt,
-      "validThrough": job.expiresAt,
-      "employmentType": job.employmentType === 'full-time' ? 'FULL_TIME' : 'CONTRACTOR',
-      "hiringOrganization": {
-        "@type": "Organization",
-        "name": job.company,
-        "sameAs": "https://gulfaro.com"
-      },
-      "jobLocation": {
-        "@type": "Place",
-        "address": {
-          "@type": "PostalAddress",
-          "streetAddress": job.district || job.city,
-          "addressLocality": job.city,
-          "addressCountry": countryInfo?.code || "SA"
-        }
-      },
-      ...(job.salaryMin ? {
-        "baseSalary": {
-          "@type": "MonetaryAmount",
-          "currency": job.currency,
-          "value": {
-            "@type": "QuantitativeValue",
-            "minValue": job.salaryMin,
-            "maxValue": job.salaryMax || job.salaryMin,
-            "unitText": "MONTH"
-          }
-        }
-      } : {})
-    };
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(canonicalShareUrl);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+        return;
+      } catch {
+        // Fallback below
+      }
+    }
 
-    script.textContent = JSON.stringify(jobSchema);
-
-    return () => {
-      const el = document.getElementById(scriptId);
-      if (el) el.remove();
-    };
-  }, [job, countryInfo]);
-
-  // WhatsApp Pre-filled URL
-  const whatsappMsg = encodeURIComponent(
-    `Hello ${job.contactPerson || 'Hiring Team'}, I saw your advertisement on Gulfaro:\n"${job.title}" (Ref: ${job.id})\nLocation: ${job.city}, ${countryInfo?.name}\nI am interested in this vacancy. Is it still available?`
-  );
-  const cleanPhone = job.contactWhatsapp.replace(/[^0-9+]/g, '');
-  const whatsappUrl = `https://wa.me/${cleanPhone}?text=${whatsappMsg}`;
-
-  // Copy share link
-  const handleShare = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.origin + '?job=' + job.slug);
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = canonicalShareUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      textArea.remove();
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Ignore
     }
   };
 
-  // Submit Application Form
-  const handleApplySubmit = (e: React.FormEvent) => {
+  const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageService.submitApplication({
-      jobId: job.id,
-      jobTitle: job.title,
-      companyName: job.company,
-      applicantUserId: currentUser?.id,
-      applicantName: applyName,
-      applicantEmail: applyEmail,
-      applicantPhone: applyPhone,
-      applicantWhatsapp: applyWhatsapp,
-      currentCountry: job.country,
-      currentCity: job.city,
-      iqamaStatus: applyIqama,
-      yearsExperience: applyExp,
-      coverNote: applyCoverNote,
-      resumeFileName: applyResumeName
-    });
-
-    setAppliedSuccess(true);
-    setTimeout(() => {
-      setShowApplyModal(false);
-      setAppliedSuccess(false);
-    }, 2000);
+    setReportError(null);
+    setReportSubmitting(true);
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'job',
+          targetId: job.id,
+          targetTitle: `${job.title} — ${job.company}`,
+          category: reportCategory,
+          reason: reportReason.trim() || reportCategory.replace('_', ' '),
+          details: reportDetails.trim(),
+          reporterName: currentUser?.name || 'Gulfaro Visitor',
+          reporterEmail: reportEmail.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReportError(data.error || 'Could not submit report.');
+      } else {
+        setReportSuccess(true);
+        setTimeout(() => {
+          setShowReportModal(false);
+          setReportSuccess(false);
+          setReportReason('');
+          setReportDetails('');
+        }, 1800);
+      }
+    } catch {
+      setReportError('Network error submitting report.');
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
-  // Find similar jobs in the same country
   const similarJobs = allJobs
-    .filter(j => j.id !== job.id && (j.country === job.country || j.category === job.category) && j.status === 'active')
+    .filter(
+      j =>
+        j.id !== job.id &&
+        isJobActiveAndUnexpired(j) &&
+        (j.country === job.country || jobMatchesCategoryFilter(j, job.category))
+    )
     .slice(0, 3);
 
-  // Expiry calculation
   const now = new Date();
   const expiryDate = new Date(job.expiresAt);
   const diffDays = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const deadlineFormatted = !Number.isNaN(expiryDate.getTime())
+    ? expiryDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    : 'Not specified';
 
   return (
     <div className="bg-slate-50 min-h-screen py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        
-        {/* Back Link & Breadcrumbs */}
-        <div className="flex items-center justify-between gap-4 mb-5">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+        {/* Top Back Link & Breadcrumbs */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <button
             onClick={onBack}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-2xs transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
-            <span>Back to All Classifieds</span>
+            <span>Back to All Jobs</span>
           </button>
 
-          {/* Breadcrumb text */}
           <nav className="hidden md:flex items-center gap-1.5 text-xs text-slate-500">
             <span>Gulfaro</span>
             <span>/</span>
             <span>{countryInfo?.name}</span>
             <span>/</span>
-            <span>{job.city}</span>
+            <span>{categoryName}</span>
             <span>/</span>
             <span className="font-mono text-slate-700">#{job.id}</span>
           </nav>
         </div>
 
+        {/* Expired Listing Banner (SEO & User Honesty) */}
+        {!isActiveListing && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3 text-amber-950 text-xs sm:text-sm">
+            <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <h2 className="font-bold text-amber-950">This Job Vacancy Has Expired</h2>
+              <p className="text-amber-900 mt-0.5">
+                The application deadline ({deadlineFormatted}) has passed or the employer closed this posting. Browse active opportunities on the homepage or country directory.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Left 2 Columns: Ad Details */}
+          {/* Left 2 Columns */}
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* Header Box */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs">
-              
-              {/* Badges & Reference */}
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-xl leading-none" role="img" aria-label={countryInfo?.name}>
+            {/* Header Summary Card */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+                  <span className="text-lg leading-none" role="img" aria-label={countryInfo?.name}>
                     {countryInfo?.flag}
                   </span>
                   <span className="font-bold text-slate-800">
                     {job.city}, {countryInfo?.name}
                   </span>
-                  {job.district && (
-                    <span className="text-slate-400">· {job.district}</span>
-                  )}
-                  {job.isFeatured && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
-                      <Sparkles className="w-3 h-3 text-amber-600" />
-                      Featured Ad
-                    </span>
-                  )}
-                  {job.isUrgent && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded">
-                      <Zap className="w-3 h-3 text-rose-600" />
-                      Urgent Joining
-                    </span>
-                  )}
+                  {job.district && <span className="text-slate-400">· {job.district}</span>}
+                  {job.isFeatured && <span className="text-teal-700 font-bold">· Featured</span>}
+                  {job.isUrgent && isActiveListing && <span className="text-rose-700 font-bold">· Urgent Hiring</span>}
                 </div>
 
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={handleShare}
-                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 text-xs flex items-center gap-1"
-                    title="Copy ad link"
+                    className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
+                      copiedLink
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-semibold'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
                   >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>{copiedLink ? 'Copied!' : 'Share'}</span>
+                    {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                    <span>{copiedLink ? 'Copied' : 'Share'}</span>
                   </button>
 
                   <button
                     onClick={() => onToggleSave(job.id)}
                     className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
-                      isSaved ? 'bg-teal-50 border-teal-300 text-teal-600 font-medium' : 'border-slate-200 text-slate-500 hover:text-slate-800'
+                      isSaved ? 'bg-teal-50 border-teal-300 text-teal-700 font-medium' : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-teal-600' : ''}`} />
+                    <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-teal-700' : ''}`} />
                     <span>{isSaved ? 'Saved' : 'Save'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowReportModal(true)}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-700 hover:bg-rose-50 text-xs flex items-center gap-1 transition-colors"
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    <span>Report</span>
                   </button>
                 </div>
               </div>
 
-              {/* Title */}
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight leading-snug mb-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-snug mb-2">
                 {job.title}
               </h1>
 
-              {/* Company & Meta */}
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 mb-4 pb-4 border-b border-slate-100">
-                <span className="font-semibold text-slate-800 text-sm">{job.company}</span>
-                <span className="text-slate-400 capitalize">({job.companyType.replace('-', ' ')})</span>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 mb-5 pb-4 border-b border-slate-100">
+                <span className="font-bold text-slate-900 text-sm">{job.company}</span>
+                {isEmployerVerified && (
+                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Verified Employer</span>
+                  </span>
+                )}
                 <span className="text-slate-300">·</span>
-                <span className="text-slate-500">Posted on {new Date(job.postedAt).toLocaleDateString()}</span>
+                <span>
+                  {categoryName}
+                  {job.subcategory && job.subcategory.toLowerCase() !== categoryName.toLowerCase()
+                    ? ` · ${job.subcategory}`
+                    : ''}
+                </span>
                 <span className="text-slate-300">·</span>
-                <span className="font-mono text-slate-400">Ref ID: {job.id}</span>
+                <span>Posted {new Date(job.postedAt).toLocaleDateString()}</span>
                 <span className="text-slate-300">·</span>
-                <span className="flex items-center gap-1 text-slate-400">
+                <span className="inline-flex items-center gap-1 text-slate-500">
                   <Eye className="w-3.5 h-3.5" />
                   {job.viewsCount} views
                 </span>
               </div>
 
-              {/* Quick Spec Highlights Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200/80 text-xs">
+              {/* Structured Key Facts Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
                 <div>
-                  <span className="block text-[10px] uppercase font-bold text-slate-400">Salary Package</span>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Monthly Salary</span>
                   <span className="font-bold text-teal-700 text-sm">
-                    {job.salaryNegotiable && !job.salaryMin 
-                      ? 'Negotiable'
-                      : `${job.currency} ${job.salaryMin?.toLocaleString() || 'Negotiable'} ${job.salaryMax ? `- ${job.salaryMax.toLocaleString()}` : ''}`}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="block text-[10px] uppercase font-bold text-slate-400">Iqama / Visa</span>
-                  <span className="font-semibold text-slate-800 capitalize">
-                    {job.iqamaRequirement === 'transferable' ? 'Transferable Iqama' : job.iqamaRequirement}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="block text-[10px] uppercase font-bold text-slate-400">Experience</span>
-                  <span className="font-semibold text-slate-800 capitalize">
-                    {job.experienceLevel.replace('-', ' ')}
+                    {job.salaryNegotiable && !job.salaryMin
+                      ? job.salaryDisplay && !/negotiable/i.test(job.salaryDisplay)
+                        ? `${job.currency} ${job.salaryDisplay}`
+                        : 'Negotiable'
+                      : `${job.currency} ${job.salaryMin?.toLocaleString() || 'Negotiable'}${job.salaryMax ? ` – ${job.salaryMax.toLocaleString()}` : ''}`}
                   </span>
                 </div>
 
                 <div>
                   <span className="block text-[10px] uppercase font-bold text-slate-400">Employment Type</span>
-                  <span className="font-semibold text-slate-800 capitalize">
+                  <span className="font-semibold text-slate-900 capitalize">
                     {job.employmentType.replace('-', ' ')}
                   </span>
                 </div>
-              </div>
 
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Work Location</span>
+                  <span className="font-semibold text-slate-900 capitalize">
+                    {job.workMode === 'on-site' ? 'On-site' : job.workMode || 'On-site'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Experience Required</span>
+                  <span className="font-semibold text-slate-900 capitalize">
+                    {job.experienceLevel.replace('-', ' ')}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Education</span>
+                  <span className="font-semibold text-slate-900">
+                    {job.educationLevel || 'Not Specified'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Application Deadline</span>
+                  <span className={`font-semibold ${isActiveListing ? 'text-slate-900' : 'text-rose-700'}`}>
+                    {deadlineFormatted}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* Walk-in Interview Notification Card if present */}
             {job.walkInInterview && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900">
                 <div className="flex items-start gap-3">
                   <Calendar className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
                   <div>
-                    <h2 className="font-bold text-sm text-amber-950 mb-1">
-                      Direct Walk-In Interview Scheduled
-                    </h2>
-                    <p className="mb-1"><span className="font-semibold">Interview Dates:</span> {job.walkInInterview.dates}</p>
-                    <p className="mb-1"><span className="font-semibold">Interview Timings:</span> {job.walkInInterview.timing}</p>
-                    <p><span className="font-semibold">Interview Venue:</span> {job.walkInInterview.venue}</p>
+                    <h2 className="font-bold text-sm text-amber-950 mb-1">Walk-In Interview Details</h2>
+                    <p className="mb-1"><span className="font-semibold">Dates:</span> {job.walkInInterview.dates}</p>
+                    <p className="mb-1"><span className="font-semibold">Timings:</span> {job.walkInInterview.timing}</p>
+                    <p><span className="font-semibold">Venue:</span> {job.walkInInterview.venue}</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Job Description */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
+            {/* Full Job Description */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
               <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                Job Description & Responsibilities
+                Job Description
               </h2>
               <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
                 {job.description}
               </div>
             </div>
 
-            {/* Candidate Requirements */}
-            {job.requirements && job.requirements.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-3">
+            {/* Key Responsibilities */}
+            {job.responsibilities && job.responsibilities.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
                 <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Required Qualifications & Skills
+                  Key Responsibilities
+                </h2>
+                <ul className="space-y-2 text-sm text-slate-700">
+                  {job.responsibilities.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Qualifications & Requirements */}
+            {job.requirements && job.requirements.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
+                <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
+                  Qualifications and Requirements
                 </h2>
                 <ul className="space-y-2 text-sm text-slate-700">
                   {job.requirements.map((req, idx) => (
@@ -361,15 +405,32 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
               </div>
             )}
 
-            {/* Benefits & Allowances */}
-            {job.benefits && job.benefits.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-3">
+            {/* Required Skills */}
+            {job.skills && job.skills.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
                 <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Compensation, Allowances & Benefits
+                  Required Skills
+                </h2>
+                <ul className="space-y-2 text-sm text-slate-700">
+                  {job.skills.map((skill, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
+                      <span>{skill}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Benefits */}
+            {job.benefits && job.benefits.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
+                <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
+                  Benefits & Allowances
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-slate-700">
                   {job.benefits.map((benefit, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <div key={idx} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
                       <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
                       <span>{benefit}</span>
                     </div>
@@ -378,117 +439,140 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
               </div>
             )}
 
-            {/* Safety Warning (Standard Expatriates Notice) */}
+            {/* Anti-Fraud Notice */}
             <div className="bg-slate-100 border border-slate-300/80 rounded-xl p-4 text-xs text-slate-700 flex items-start gap-3">
               <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <h2 className="font-bold text-slate-900 mb-0.5">Gulfaro Anti-Fraud & Scam Warning</h2>
+                <h2 className="font-bold text-slate-900 mb-0.5">Candidate Safety Notice</h2>
                 <p className="leading-relaxed">
-                  Never pay any money for visas, medical certificates, work permits, or interview processing. Legitimate GCC companies and accredited recruitment agencies never demand cash or bank transfers from job seekers. Report any suspicious requests immediately.
+                  Never pay any money for visas, medical certificates, work permits, or interview processing. Legitimate GCC employers never charge job seekers recruitment fees.
                 </p>
               </div>
             </div>
-
           </div>
 
-          {/* Right 1 Column: Direct Contact & Apply Box (Sticky) */}
+          {/* Right Column: Application Instructions & Direct Contact */}
           <div className="space-y-6">
-            
-            {/* Direct Contact Card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm sticky top-20 space-y-4">
-              
+            <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20 space-y-4">
               <div className="pb-3 border-b border-slate-100">
-                <span className="text-xs font-bold text-teal-600 uppercase tracking-wider block mb-1">
-                  Direct Employer Contact
+                <span className="text-xs font-bold text-teal-700 uppercase tracking-wider block mb-1">
+                  How to Apply (Direct Contact)
                 </span>
                 <h2 className="font-bold text-slate-900 text-sm">
                   {job.contactPerson || job.company}
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Contact advertiser directly without any middleman
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Send your CV and cover note directly to the employer via email or telephone.
                 </p>
               </div>
 
-              {/* Action 1: Direct WhatsApp Button */}
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => storageService.incrementInquiries(job.id)}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-xs transition-colors text-sm"
-              >
-                <MessageCircle className="w-5 h-5" />
-                <span>Chat on WhatsApp</span>
-              </a>
+              {isActiveListing ? (
+                <>
+                  {job.contactEmail && (
+                    <a
+                      href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
+                      onClick={() => storageService.incrementInquiries(job.id)}
+                      className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl transition-colors text-sm"
+                    >
+                      <Mail className="w-4 h-4" />
+                      <span>Apply via Direct Email</span>
+                    </a>
+                  )}
 
-              {/* Action 2: Direct Call Button */}
-              <a
-                href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
-                onClick={() => storageService.incrementInquiries(job.id)}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors text-xs"
-              >
-                <PhoneCall className="w-4 h-4 text-teal-400" />
-                <span>Call: {job.contactPhone}</span>
-              </a>
+                  {job.contactPhone && (
+                    <a
+                      href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
+                      onClick={() => storageService.incrementInquiries(job.id)}
+                      className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors text-xs"
+                    >
+                      <PhoneCall className="w-4 h-4 text-teal-400" />
+                      <span>Call: {job.contactPhone}</span>
+                    </a>
+                  )}
+                </>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
+                  Applications for this vacancy are closed because the deadline has passed.
+                </div>
+              )}
 
-              {/* Action 3: Direct Email */}
-              <a
-                href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
-                onClick={() => storageService.incrementInquiries(job.id)}
-                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-2.5 px-4 rounded-xl transition-colors text-xs border border-slate-200"
-              >
-                <Mail className="w-4 h-4 text-slate-600" />
-                <span>Send Email Application</span>
-              </a>
-
-              {/* Action 4: Quick In-App Application Modal Trigger */}
-              <div className="pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => setShowApplyModal(true)}
-                  className="w-full flex items-center justify-center gap-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold py-2 px-3 rounded-lg text-xs border border-teal-200 transition-colors"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Submit Profile & CV Direct to Employer</span>
-                </button>
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                {job.contactEmail && (
+                  <p className="truncate">
+                    <strong className="text-slate-800">Email:</strong> {job.contactEmail}
+                  </p>
+                )}
+                {job.contactPhone && (
+                  <p>
+                    <strong className="text-slate-800">Phone:</strong> {job.contactPhone}
+                  </p>
+                )}
+                <p>
+                  <strong className="text-slate-800">Vacancies:</strong> {job.vacanciesCount || 1}
+                </p>
+                <p>
+                  <strong className="text-slate-800">Reference ID:</strong> #{job.id}
+                </p>
               </div>
 
-              {/* Ad Status & Expiry Note */}
-              <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
-                <div className="flex justify-between">
-                  <span>Ad Status:</span>
-                  <span className="font-bold text-emerald-600 capitalize">{job.status}</span>
+              <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span>Listing Status:</span>
+                  <span className={`font-bold capitalize ${isActiveListing ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {isActiveListing ? `Active (${diffDays}d left)` : 'Expired'}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Expires In:</span>
-                  <span className="font-bold text-slate-700">{diffDays} days</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Employer Verified:</span>
-                  <span className="text-slate-700 font-medium">✓ Phone & WhatsApp</span>
+                <div className="flex justify-between items-center">
+                  <span>Deadline:</span>
+                  <span className="font-semibold text-slate-700">{deadlineFormatted}</span>
                 </div>
               </div>
-
             </div>
 
-            {/* Google AdSense Medium Rectangle (300x250) */}
+            {/* Share Direct Link */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <Share2 className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Share Vacancy Link</span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  readOnly
+                  value={canonicalShareUrl}
+                  aria-label="Direct job link"
+                  className="w-full text-[11px] font-mono bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600 select-all focus:outline-none"
+                  onClick={e => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  onClick={handleShare}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-teal-700 text-white shrink-0 flex items-center gap-1"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Ad Container (Separated with generous margin) */}
             <AdBanner type="rectangle" />
 
-            {/* Similar Jobs in this Country */}
+            {/* Similar Active Vacancies */}
             {similarJobs.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
                 <h2 className="font-bold text-slate-900 text-xs uppercase tracking-wider mb-3">
-                  More Vacancies in {countryInfo?.name}
+                  Related Active Vacancies
                 </h2>
                 <div className="space-y-3">
                   {similarJobs.map(sim => (
                     <div
                       key={sim.id}
                       onClick={() => onSelectSimilarJob(sim)}
-                      className="p-2.5 rounded-lg border border-slate-100 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-colors text-xs"
+                      className="p-3 rounded-lg border border-slate-200 hover:border-teal-600 cursor-pointer transition-colors text-xs"
                     >
-                      <h4 className="font-bold text-slate-900 line-clamp-1 hover:text-teal-700">
-                        {sim.title}
-                      </h4>
+                      <h3 className="font-bold text-slate-900 line-clamp-1">{sim.title}</h3>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         {sim.city} · {sim.company}
                       </p>
@@ -497,173 +581,103 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                 </div>
               </div>
             )}
-
           </div>
-
         </div>
-
       </div>
 
-      {/* Direct Apply Modal */}
-      {showApplyModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 relative animate-in fade-in zoom-in-95 duration-150">
-            
+      {/* Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div>
-                <h2 className="font-bold text-lg text-slate-900">
-                  Direct Job Application
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Applying to: <span className="font-semibold text-slate-800">{job.title}</span> ({job.company})
-                </p>
+                <h2 className="font-bold text-base text-slate-900">Report Job Listing</h2>
+                <p className="text-xs text-slate-500 truncate max-w-xs">{job.title} ({job.id})</p>
               </div>
-              <button
-                onClick={() => setShowApplyModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none p-1"
-              >
+              <button onClick={() => setShowReportModal(false)} className="text-slate-400 hover:text-slate-700 p-1">
                 ✕
               </button>
             </div>
 
-            {appliedSuccess ? (
-              <div className="text-center py-8 space-y-3">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                  <Check className="w-6 h-6 stroke-[3]" />
-                </div>
-                <h4 className="font-bold text-slate-900 text-base">Application Submitted!</h4>
-                <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                  Your credentials and CV have been transmitted to {job.contactPerson || job.company}. The employer will reach you via WhatsApp or phone call.
-                </p>
+            {reportSuccess ? (
+              <div className="text-center py-8 space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                <h3 className="font-bold text-slate-900 text-sm">Report Submitted</h3>
+                <p className="text-xs text-slate-600">Our Trust & Safety team has received this report.</p>
               </div>
             ) : (
-              <form onSubmit={handleApplySubmit} className="space-y-3.5 text-xs text-slate-700">
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Your Full Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={applyName}
-                      onChange={(e) => setApplyName(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    />
+              <form onSubmit={handleReportSubmit} className="space-y-3 text-xs">
+                {reportError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg font-medium">
+                    {reportError}
                   </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Email Address *</label>
-                    <input
-                      type="email"
-                      required
-                      value={applyEmail}
-                      onChange={(e) => setApplyEmail(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">WhatsApp Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={applyWhatsapp}
-                      onChange={(e) => setApplyWhatsapp(e.target.value)}
-                      placeholder="+966 50..."
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Phone Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={applyPhone}
-                      onChange={(e) => setApplyPhone(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Iqama / Visa Status</label>
-                    <select
-                      value={applyIqama}
-                      onChange={(e) => setApplyIqama(e.target.value as any)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    >
-                      <option value="transferable">Transferable Iqama</option>
-                      <option value="non-transferable">Non-Transferable</option>
-                      <option value="visit-visa">Visit Visa</option>
-                      <option value="employment-visa">Employment Visa</option>
-                      <option value="citizen-only">GCC Citizen</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Years of Experience</label>
-                    <input
-                      type="text"
-                      value={applyExp}
-                      onChange={(e) => setApplyExp(e.target.value)}
-                      placeholder="e.g. 4 years"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
-                    />
-                  </div>
-                </div>
-
+                )}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Attached CV / Resume</label>
-                  <div className="flex items-center gap-2 p-2 border border-dashed border-slate-300 rounded-lg bg-slate-50">
-                    <FileText className="w-4 h-4 text-teal-600 shrink-0" />
-                    <span className="font-mono text-slate-700 text-xs truncate">{applyResumeName}</span>
-                    <button
-                      type="button"
-                      onClick={() => setApplyResumeName('Updated_Resume_2026.pdf')}
-                      className="ml-auto text-[11px] text-teal-600 hover:underline font-semibold shrink-0"
-                    >
-                      Change
-                    </button>
-                  </div>
+                  <label className="block font-bold text-slate-700 mb-1">Violation Category *</label>
+                  <select
+                    value={reportCategory}
+                    onChange={e => setReportCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50"
+                  >
+                    <option value="scam_fraud">Scam or Fraudulent Activity</option>
+                    <option value="visa_fee">Demanding Visa / Recruitment Fee</option>
+                    <option value="fake_job">Fake or Expired Job Listing</option>
+                    <option value="spam">Spam or Misleading Information</option>
+                    <option value="other">Other Policy Violation</option>
+                  </select>
                 </div>
-
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Brief Introduction / Cover Message</label>
-                  <textarea
-                    rows={3}
-                    value={applyCoverNote}
-                    onChange={(e) => setApplyCoverNote(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-teal-500"
+                  <label className="block font-bold text-slate-700 mb-1">Summary Reason *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reportReason}
+                    onChange={e => setReportReason(e.target.value)}
+                    placeholder="Briefly describe the issue"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                   />
                 </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Additional Details</label>
+                  <textarea
+                    rows={3}
+                    value={reportDetails}
+                    onChange={e => setReportDetails(e.target.value)}
+                    placeholder="Provide helpful details for review..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Your Email (Optional)</label>
+                  <input
+                    type="email"
+                    value={reportEmail}
+                    onChange={e => setReportEmail(e.target.value)}
+                    placeholder="Optional contact for follow-up"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setShowApplyModal(false)}
-                    className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 text-xs font-semibold"
+                    onClick={() => setShowReportModal(false)}
+                    className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-colors"
+                    disabled={reportSubmitting}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold disabled:opacity-60"
                   >
-                    Send Application to Advertiser
+                    {reportSubmitting ? 'Submitting...' : 'Submit Report'}
                   </button>
                 </div>
-
               </form>
             )}
-
           </div>
         </div>
       )}
-
     </div>
   );
 };

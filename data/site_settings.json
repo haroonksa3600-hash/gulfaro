@@ -1,0 +1,105 @@
+{
+  "registration": {
+    "allowJobSeekerRegistration": true,
+    "allowEmployerRegistration": true,
+    "emailVerificationMode": "automatic",
+    "spamProtectionEnabled": true,
+    "captchaEnabled": false,
+    "captchaProvider": "builtin_challenge",
+    "maxFailedLoginAttempts": 5,
+    "lockoutDurationMinutes": 15,
+    "userSessionTimeoutMinutes": 1440,
+    "adminSessionTimeoutMinutes": 15,
+    "blockedDomains": [
+      "tempmail.com",
+      "mailinator.com",
+      "guerrillamail.com",
+      "10minutemail.com"
+    ],
+    "blockedKeywords": [
+      "pay for visa",
+      "visa fee advance",
+      "send money western union",
+      "processing fee upfront"
+    ]
+  },
+  "emailConfig": {
+    "senderName": "Gulfaro Official",
+    "senderEmail": "admingulfaro@gmail.com",
+    "replyToEmail": "admingulfaro@gmail.com",
+    "verificationSubject": "Verify Your Employer Corporate Email - Gulfaro",
+    "verificationHeading": "Official Employer Verification Gateway",
+    "verificationBody": "Please confirm ownership of your corporate email address using the 6-digit code or instant verification link below.",
+    "resetSubject": "Reset Your Gulfaro Password",
+    "resetHeading": "Account Security & Password Recovery",
+    "resetBody": "We received a request to reset the password associated with your Gulfaro account. Use the single-use link below within 1 hour.",
+    "welcomeEmailEnabled": true,
+    "welcomeSubject": "Welcome to Gulfaro GCC Job Marketplace",
+    "welcomeBody": "Your Gulfaro account is now active. Browse direct GCC vacancies or publish job advertisements immediately."
+  },
+  "cms": {
+    "siteName": "Gulfaro",
+    "tagline": "GCC Job Classifieds Marketplace",
+    "logoUrl": "/assets/aistudio/Gulfaro_logo_white_clean.png",
+    "faviconUrl": "/favicon-g-emblem.png",
+    "heroTitle": "Direct Job Opportunities Across Saudi Arabia, UAE & The Gulf",
+    "heroSubtitle": "Browse genuine vacancies across KSA, UAE, Qatar, Kuwait, Bahrain & Oman. Contact employers and recruiters directly through official email or direct phone call.",
+    "announcementBanner": {
+      "enabled": false,
+      "text": "Welcome to Gulfaro – Direct GCC Job Opportunities across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman.",
+      "variant": "info",
+      "linkLabel": "",
+      "linkUrl": ""
+    },
+    "promoBanners": [],
+    "footerDescription": "Gulfaro is a modern GCC employment portal connecting skilled expatriate and national talent with direct employers across the Arabian Gulf.",
+    "footerContactEmail": "admingulfaro@gmail.com",
+    "footerCopyright": "© 2026 GULFARO. All rights reserved. GCC Employment Portal.",
+    "aboutUsContent": "Gulfaro connects skilled professionals with employers across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman. Employers can publish vacancies directly, and candidates reach hiring teams via official contact email or telephone.",
+    "contactUsEmail": "admingulfaro@gmail.com",
+    "contactUsPhone": "",
+    "contactUsAddress": "",
+    "faqs": [
+      {
+        "id": "faq-1",
+        "question": "Is Gulfaro free for Job Seekers?",
+        "answer": "Yes. Job seekers can read all vacancies, explore career guides, and contact employers directly via email or phone completely free of charge. Never pay any money for visas or interviews."
+      },
+      {
+        "id": "faq-2",
+        "question": "How quickly do Employer job ads go live?",
+        "answer": "Registered employers publish job vacancies automatically after submitting the single-page posting form and passing automated security and anti-spam checks."
+      },
+      {
+        "id": "faq-3",
+        "question": "How does corporate email verification work?",
+        "answer": "Employers can verify their corporate email address in their account settings to display a Verified Email badge on their published job listings."
+      }
+    ],
+    "termsContent": "Employers and agencies are strictly prohibited from demanding recruitment fees, visa charges, or interview processing payments from candidates. All listings must reflect genuine vacancies.",
+    "privacyContent": "Gulfaro protects user personal data in compliance with Saudi PDPL, UAE Federal Decree-Law No. 45/2021, and GCC privacy standards."
+  },
+  "adsense": {
+    "enabled": true,
+    "publisherId": "ca-pub-0000000000000000",
+    "autoAdsEnabled": false,
+    "testMode": true,
+    "slots": {
+      "headerLeaderboard": "1234567890",
+      "inFeedClassified": "2345678901",
+      "sidebarRectangle": "3456789012",
+      "jobDetailBottom": "4567890123"
+    }
+  },
+  "emergency": {
+    "maintenanceMode": false,
+    "maintenanceMessage": "Gulfaro is currently undergoing scheduled platform maintenance to improve performance. We will be back online shortly.",
+    "emergencyShutdown": false,
+    "emergencyShutdownMessage": "Public platform access is temporarily paused for urgent security maintenance.",
+    "hideAllPublicJobs": false,
+    "disableNewJobPublishing": false,
+    "restrictedFeatures": [],
+    "updatedAt": "2026-11-14T01:22:19.813Z",
+    "updatedBy": "system"
+  }
+}
