@@ -849,13 +849,17 @@ async function startServer() {
   // Helper to resolve requester & job ownership cleanly
   async function resolveJobRequester(req: Request, bodyUserId?: string, bodyEmail?: string): Promise<any | null> {
     const headerId = req.headers['x-gulfaro-user-id'];
+    const headerEmail = req.headers['x-gulfaro-user-email'];
     const targetId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : bodyUserId;
     if (targetId) {
       const byId = await findUserById(targetId);
       if (byId) return byId;
     }
-    if (bodyEmail) {
-      const byEmail = await findUserByEmail(String(bodyEmail).trim().toLowerCase());
+    const fallbackEmail =
+      (typeof bodyEmail === 'string' && bodyEmail.trim() ? bodyEmail : undefined) ||
+      (typeof headerEmail === 'string' && headerEmail.trim() ? headerEmail : undefined);
+    if (fallbackEmail) {
+      const byEmail = await findUserByEmail(String(fallbackEmail).trim().toLowerCase());
       if (byEmail) return byEmail;
     }
     return null;
@@ -907,7 +911,7 @@ async function startServer() {
       }
 
       const adData = req.body || {};
-      const postingUser = await resolveJobRequester(req, adData.userId, undefined);
+      const postingUser = await resolveJobRequester(req, adData.userId, adData.requesterEmail);
 
       // Strict Registered Employer Permission Enforcement
       if (!postingUser) {
@@ -970,8 +974,17 @@ async function startServer() {
         }
       }
 
-      const randomIdNumber = Math.floor(1000 + Math.random() * 9000);
-      const id = adData.id || `GF-${randomIdNumber}`;
+      const existingJobs = await getJobs();
+      const existingIds = new Set(existingJobs.map(j => String(j.id || '').toUpperCase()));
+      let randomIdNumber = Math.floor(1000 + Math.random() * 9000);
+      let generatedId = `GF-${randomIdNumber}`;
+      let attempts = 0;
+      while (!adData.id && existingIds.has(generatedId.toUpperCase()) && attempts < 20) {
+        randomIdNumber = Math.floor(10000 + Math.random() * 90000);
+        generatedId = `GF-${randomIdNumber}`;
+        attempts++;
+      }
+      const id = adData.id || generatedId;
 
       const cleanTitle = (adData.title || 'vacancy')
         .toLowerCase()
@@ -1022,7 +1035,7 @@ async function startServer() {
       res.status(201).json(newJob);
     } catch (err: any) {
       console.error('Error creating job:', err);
-      await appendSystemErrorEntry({ level: 'error', source: '/api/jobs', message: err?.message || 'Job publish error' });
+      await appendSystemErrorEntry({ level: 'error', source: '/api/jobs', message: err?.message || 'Job publish error' }).catch(() => {});
       res.status(500).json({ error: 'Failed to create job', details: err?.message });
     }
   });
@@ -1284,6 +1297,28 @@ ${xmlItems}
       console.error('Error generating /sitemap.xml:', err);
       res.status(500).type('text/plain').send('Failed to generate sitemap');
     }
+  });
+
+  // Ensure unmatched /api/* routes and middleware/body-parser errors always return JSON (never HTML)
+  app.use('/api', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'API endpoint not found.' });
+  });
+
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+    if (req.originalUrl.startsWith('/api')) {
+      const status = Number(err?.status || err?.statusCode || 500);
+      const message =
+        err?.type === 'entity.too.large'
+          ? 'Submitted payload is too large. Please shorten the text and try again.'
+          : err?.type === 'entity.parse.failed'
+            ? 'Invalid JSON request payload.'
+            : err?.message || 'Internal server error.';
+      return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+    }
+    return next(err);
   });
 
   // =========================================================================

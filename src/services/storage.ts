@@ -452,31 +452,112 @@ class StorageService {
     }
   }
 
+  private async fetchJsonWithRetry(
+    url: string,
+    init: RequestInit,
+    retries = 1
+  ): Promise<{ res: Response; data: any; isJson: boolean }> {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      try {
+        const res = await fetch(url, {
+          ...init,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const rawText = await res.text();
+        let data: any = null;
+        let isJson = false;
+        if (rawText) {
+          try {
+            data = JSON.parse(rawText);
+            isJson = true;
+          } catch {
+            isJson = false;
+          }
+        } else {
+          data = {};
+        }
+
+        const isTransientGateway = !isJson && (res.status === 502 || res.status === 503 || res.status === 504);
+        if (isTransientGateway && attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 700));
+          continue;
+        }
+
+        return { res, data: isJson ? data : {}, isJson };
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        const isAbort = err?.name === 'AbortError';
+        if (!isAbort && attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 700));
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw lastError || new Error('Network request failed');
+  }
+
   public async createJobAsync(
     adData: Omit<JobAd, 'id' | 'slug' | 'postedAt' | 'expiresAt' | 'viewsCount' | 'inquiriesCount'>
   ): Promise<{ success: boolean; job?: JobAd; error?: string; invalidFields?: string[] }> {
     try {
       const requesterId = this.currentUser?.id || adData.userId || '';
-      const res = await fetch('/api/jobs', {
+      const requesterEmail = this.currentUser?.email || '';
+      const { res, data, isJson } = await this.fetchJsonWithRetry('/api/jobs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
+          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
         },
-        body: JSON.stringify(adData)
+        body: JSON.stringify({
+          ...adData,
+          ...(requesterEmail ? { requesterEmail } : {})
+        })
       });
-      const data = await res.json();
+
       if (!res.ok) {
+        if (!isJson) {
+          return {
+            success: false,
+            error:
+              res.status === 502 || res.status === 503 || res.status === 504
+                ? 'The Gulfaro server is temporarily restarting. Please wait a few seconds and click Publish Job again.'
+                : `Unexpected response from the Gulfaro server (HTTP ${res.status}). Please try again.`
+          };
+        }
         return {
           success: false,
           error: data.error || 'Failed to publish job advertisement.',
           invalidFields: Array.isArray(data.invalidFields) ? data.invalidFields : undefined
         };
       }
+
+      if (!isJson || !data || !data.id) {
+        return {
+          success: false,
+          error: 'The Gulfaro server returned an invalid job response. Please try again.'
+        };
+      }
+
       this.jobs.unshift(data);
       this.saveJobsToStorage();
       return { success: true, job: data };
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Publishing timed out while waiting for the Gulfaro server. Please check your connection and try again.'
+        };
+      }
       return {
         success: false,
         error: 'Unable to reach the Gulfaro server to validate and publish your job. Please try again.'
@@ -540,20 +621,42 @@ class StorageService {
     if (!id) return { success: false, error: 'Missing job ID.' };
     try {
       const requesterId = this.currentUser?.id || '';
-      const res = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
+      const requesterEmail = this.currentUser?.email || '';
+      const { res, data, isJson } = await this.fetchJsonWithRetry(`/api/jobs/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
+          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
         },
-        body: JSON.stringify({ ...updates, requesterUserId: requesterId })
+        body: JSON.stringify({
+          ...updates,
+          requesterUserId: requesterId,
+          ...(requesterEmail ? { requesterEmail } : {})
+        })
       });
-      const data = await res.json();
+
       if (!res.ok) {
+        if (!isJson) {
+          return {
+            success: false,
+            error:
+              res.status === 502 || res.status === 503 || res.status === 504
+                ? 'The Gulfaro server is temporarily restarting. Please wait a few seconds and try again.'
+                : `Unexpected response from the Gulfaro server (HTTP ${res.status}). Please try again.`
+          };
+        }
         return {
           success: false,
           error: data.error || 'Failed to update job advertisement.',
           invalidFields: Array.isArray(data.invalidFields) ? data.invalidFields : undefined
+        };
+      }
+
+      if (!isJson || !data || !data.id) {
+        return {
+          success: false,
+          error: 'The Gulfaro server returned an invalid job update response. Please try again.'
         };
       }
 
@@ -589,11 +692,13 @@ class StorageService {
     // Persist changes to server database API
     if (typeof window !== 'undefined') {
       const requesterId = this.currentUser?.id || '';
+      const requesterEmail = this.currentUser?.email || '';
       fetch(`/api/jobs/${encodeURIComponent(this.jobs[index].id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
+          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
         },
         body: JSON.stringify({ ...updates, requesterUserId: requesterId })
       }).catch(err => console.warn('Could not sync updated job to server:', err));
@@ -606,17 +711,24 @@ class StorageService {
     if (!id) return { success: false, error: 'Missing job ID.' };
     try {
       const requesterId = this.currentUser?.id || '';
-      const res = await fetch(`/api/jobs/${encodeURIComponent(id)}?userId=${encodeURIComponent(requesterId)}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
-        },
-        body: JSON.stringify({ requesterUserId: requesterId })
-      });
-      const data = await res.json();
+      const requesterEmail = this.currentUser?.email || '';
+      const { res, data, isJson } = await this.fetchJsonWithRetry(
+        `/api/jobs/${encodeURIComponent(id)}?userId=${encodeURIComponent(requesterId)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+            ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
+          },
+          body: JSON.stringify({ requesterUserId: requesterId })
+        }
+      );
       if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to delete job advertisement.' };
+        return {
+          success: false,
+          error: (isJson && data.error) || 'Failed to delete job advertisement.'
+        };
       }
 
       const cleanId = id.trim().toLowerCase();
@@ -760,6 +872,18 @@ class StorageService {
           });
           this.users = Array.from(userMap.values());
           this.saveUsersToStorage();
+
+          // Keep active session synced with canonical server user ID & verification state
+          if (this.currentUser?.email) {
+            const matchedServerUser = userMap.get(this.currentUser.email.toLowerCase().trim());
+            if (matchedServerUser) {
+              this.setCurrentUser({
+                ...this.currentUser,
+                ...matchedServerUser,
+                password: this.currentUser.password || matchedServerUser.password
+              });
+            }
+          }
         }
       }
     } catch (e) {
@@ -924,23 +1048,15 @@ class StorageService {
     const emailNormalized = (userData.email || '').toLowerCase().trim();
     const phoneTrimmed = (userData.phone || '').trim();
 
-    console.log('[Gulfaro Auth] Registering user in persistent storage:', emailNormalized);
-
-    // 1. Instantly write to persistent localStorage 'gulfaro_users' so data is NEVER lost
-    const localResult = this.registerUser({
-      ...userData,
-      email: emailNormalized,
-      phone: phoneTrimmed,
-      whatsapp: (userData.whatsapp || phoneTrimmed).trim()
-    });
-
-    if (!localResult.success || !localResult.user) {
-      return localResult;
+    if (!emailNormalized) {
+      return { success: false, error: 'A valid email address is required.' };
     }
 
-    // 2. Also persist to backend server database (data/users.json)
+    console.log('[Gulfaro Auth] Registering user on Gulfaro server:', emailNormalized);
+
+    // 1. Register on backend server FIRST so canonical user ID & database persistence are guaranteed
     try {
-      const res = await fetch('/api/auth/register', {
+      const { res, data, isJson } = await this.fetchJsonWithRetry('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -951,13 +1067,15 @@ class StorageService {
           accessKey: userData.accessKey
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        return { success: false, error: data.error || 'Registration failed.' };
+
+      if (!res.ok || !isJson || !data.success) {
+        return {
+          success: false,
+          error: (isJson && data.error) || 'Registration failed. Please verify your details and try again.'
+        };
       }
 
       if (data.user) {
-        // Keep the plaintext password stored locally so offline/local login succeeds
         const mergedUser: User = {
           ...data.user,
           password: userData.password
@@ -965,17 +1083,22 @@ class StorageService {
         const idx = this.users.findIndex(u => u.email.toLowerCase().trim() === emailNormalized);
         if (idx >= 0) {
           this.users[idx] = mergedUser;
-          this.saveUsersToStorage();
+        } else {
+          this.users.push(mergedUser);
         }
+        this.saveUsersToStorage();
         this.setCurrentUser(mergedUser);
-        localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(mergedUser));
         return { success: true, user: mergedUser };
       }
-    } catch (networkErr) {
-      console.warn('[Gulfaro Auth] Server registration request failed, local storage user preserved:', networkErr);
-    }
 
-    return { success: true, user: localResult.user };
+      return { success: false, error: 'Unexpected registration response from server.' };
+    } catch (networkErr) {
+      console.warn('[Gulfaro Auth] Server registration request failed:', networkErr);
+      return {
+        success: false,
+        error: 'Unable to reach the Gulfaro registration server. Please try again.'
+      };
+    }
   }
 
   public registerUser(userData: Omit<User, 'id' | 'createdAt'>): { success: boolean; user?: User; error?: string } {
