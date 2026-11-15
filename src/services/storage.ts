@@ -2,7 +2,7 @@ import { JobAd, User, GccCountry, GCC_COUNTRIES } from '../types/job';
 import { INITIAL_JOB_ADS } from '../data/seedJobs';
 import { AdSenseConfig, DEFAULT_ADSENSE_CONFIG } from '../types/adsense';
 import { resolveJobCategoryId } from '../data/categories';
-import { apiUrl } from './apiConfig';
+import { apiUrl, isMissingProductionBackendConfig } from './apiConfig';
 
 const STORAGE_KEY_JOBS = 'golfaro_jobs_v1';
 const STORAGE_KEY_SAVED = 'golfaro_saved_jobs_v1';
@@ -527,6 +527,15 @@ class StorageService {
 
       if (!res.ok) {
         if (!isJson) {
+          const targetUrl = apiUrl('/api/jobs');
+          console.error(`[Gulfaro API] Expected JSON from POST ${targetUrl} but received HTTP ${res.status}.`);
+          if (res.status === 404 && isMissingProductionBackendConfig()) {
+            return {
+              success: false,
+              error:
+                'Backend server is not connected yet (HTTP 404 on /api/jobs). Hostinger static hosting cannot run the Node.js API — deploy your backend on Render and set its URL in public/gulfaro-config.js or VITE_API_BASE_URL.'
+            };
+          }
           return {
             success: false,
             error:
@@ -641,6 +650,15 @@ class StorageService {
 
       if (!res.ok) {
         if (!isJson) {
+          const targetUrl = apiUrl(`/api/jobs/${encodeURIComponent(id)}`);
+          console.error(`[Gulfaro API] Expected JSON from PUT ${targetUrl} but received HTTP ${res.status}.`);
+          if (res.status === 404 && isMissingProductionBackendConfig()) {
+            return {
+              success: false,
+              error:
+                'Backend server is not connected yet (HTTP 404 on /api/jobs). Deploy your backend on Render and set its URL in public/gulfaro-config.js or VITE_API_BASE_URL.'
+            };
+          }
           return {
             success: false,
             error:
@@ -728,6 +746,13 @@ class StorageService {
         }
       );
       if (!res.ok) {
+        if (!isJson && res.status === 404 && isMissingProductionBackendConfig()) {
+          return {
+            success: false,
+            error:
+              'Backend server is not connected yet (HTTP 404 on /api/jobs). Deploy your backend on Render and set its URL in public/gulfaro-config.js or VITE_API_BASE_URL.'
+          };
+        }
         return {
           success: false,
           error: (isJson && data.error) || 'Failed to delete job advertisement.'

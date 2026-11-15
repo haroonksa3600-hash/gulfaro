@@ -54,8 +54,14 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['**/gulfaro-config.js'],
           navigateFallbackDenylist: [/^\/api\/.*/, /^\/sitemap\.xml$/, /^\/robots\.txt$/],
           runtimeCaching: [
+            {
+              // Never cache runtime backend URL configuration so Hostinger updates apply immediately
+              urlPattern: /\/gulfaro-config\.js$/i,
+              handler: 'NetworkOnly'
+            },
             {
               // Strictly bypass cache for all API routes (never cache auth, user info, or private data)
               urlPattern: /^\/api\/.*/i,

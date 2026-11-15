@@ -78,13 +78,14 @@ define(['./workbox-43e44e5a'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "0.mv5pgfhdog8"
+    "revision": "0.jth87b6i398"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/],
     denylist: [/^\/api\/.*/, /^\/sitemap\.xml$/, /^\/robots\.txt$/]
   }));
+  workbox.registerRoute(/\/gulfaro-config\.js$/i, new workbox.NetworkOnly(), 'GET');
   workbox.registerRoute(/^\/api\/.*/i, new workbox.NetworkOnly(), 'GET');
   workbox.registerRoute(/^https:\/\/fonts\.googleapis\.com\/.*/i, new workbox.CacheFirst({
     "cacheName": "google-fonts-cache",
