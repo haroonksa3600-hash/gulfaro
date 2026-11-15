@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GccCountry, GCC_COUNTRIES, User } from '../types/job';
 import { storageService, DEMO_USERS } from '../services/storage';
+import gccMeetingImg from '../assets/images/gcc_recruitment_meeting_1793920057434.jpg';
 import { 
   Building, 
   UserCheck, 
@@ -290,7 +291,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         <div className="lg:col-span-5 bg-slate-950 text-white p-8 sm:p-10 relative flex flex-col justify-between overflow-hidden">
           <div className="absolute inset-0 z-0">
             <img
-              src="/src/assets/images/gcc_recruitment_meeting_1793920057434.jpg"
+              src={gccMeetingImg}
               alt="GCC Corporate Recruitment Meeting in Riyadh & Dubai"
               className="w-full h-full object-cover opacity-25"
               referrerPolicy="no-referrer"

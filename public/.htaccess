@@ -1,0 +1,34 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Enforce canonical HTTPS + www.gulfaro.net (consistent www / non-www resolution)
+  RewriteCond %{HTTP_HOST} ^gulfaro\.net$ [NC]
+  RewriteRule ^(.*)$ https://www.gulfaro.net/$1 [R=301,L]
+
+  RewriteCond %{HTTP_HOST} ^www\.gulfaro\.net$ [NC]
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+  RewriteRule ^(.*)$ https://www.gulfaro.net/$1 [R=301,L]
+
+  # 2. Never rewrite backend API endpoints to frontend HTML
+  RewriteRule ^api(/.*)?$ - [L]
+
+  # 3. Serve dynamic OpenGraph / WhatsApp / Facebook metadata for individual job links
+  RewriteCond %{HTTP_USER_AGENT} (WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|TelegramBot|Slackbot|Discordbot|Pinterest) [NC]
+  RewriteRule ^jobs?/([^/]+)/?$ https://gulfaro.onrender.com/share/job/$1 [R=302,L]
+
+  # 4. Serve existing physical files and directories normally (JS, CSS, images, icons, config)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 5. SPA fallback: route all valid frontend URLs (/job/SLUG, /country/..., /category/..., etc.) to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|gulfaro-config\.js|sw\.js)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>

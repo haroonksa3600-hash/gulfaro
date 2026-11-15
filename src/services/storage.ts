@@ -324,27 +324,13 @@ class StorageService {
       const res = await fetch(apiUrl('/api/jobs'));
       if (res.ok) {
         const serverJobs: JobAd[] = await res.json();
-        if (Array.isArray(serverJobs) && serverJobs.length > 0) {
-          const jobMap = new Map<string, JobAd>();
-          // Server jobs take priority
-          serverJobs.forEach(j => {
-            if (j && j.id) {
-              jobMap.set(j.id.toLowerCase(), {
-                ...j,
-                category: resolveJobCategoryId(j.category, { title: j.title, subcategory: j.subcategory })
-              });
-            }
-          });
-          // Preserve local jobs that haven't synced yet
-          this.jobs.forEach(j => {
-            if (j && j.id && !jobMap.has(j.id.toLowerCase())) {
-              jobMap.set(j.id.toLowerCase(), {
-                ...j,
-                category: resolveJobCategoryId(j.category, { title: j.title, subcategory: j.subcategory })
-              });
-            }
-          });
-          this.jobs = Array.from(jobMap.values());
+        if (Array.isArray(serverJobs)) {
+          this.jobs = serverJobs
+            .filter(j => j && j.id)
+            .map(j => ({
+              ...j,
+              category: resolveJobCategoryId(j.category, { title: j.title, subcategory: j.subcategory })
+            }));
           this.saveJobsToStorage();
         }
       }
@@ -354,39 +340,62 @@ class StorageService {
     return [...this.jobs];
   }
 
-  // Fetch job from memory/cache or fallback to server API directly
-  public async fetchJob(slugOrId: string): Promise<JobAd | null> {
-    if (!slugOrId) return null;
-    
-    // 1. Check in-memory / local storage first
-    const existing = this.getJobBySlug(slugOrId);
-    if (existing) return existing;
+  private removeCachedJobBySlugOrId(slugOrId: string) {
+    const clean = decodeURIComponent(slugOrId).trim().replace(/\/+$/, '').replace(/\.html$/i, '').toLowerCase();
+    if (!clean) return;
+    const prevLen = this.jobs.length;
+    this.jobs = this.jobs.filter(j => {
+      const jSlug = (j.slug || '').trim().toLowerCase();
+      const jId = (j.id || '').trim().toLowerCase();
+      return jSlug !== clean && jId !== clean;
+    });
+    if (this.jobs.length !== prevLen) {
+      this.saveJobsToStorage();
+    }
+  }
 
-    // 2. Fetch directly from server API
-    try {
-      const res = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(slugOrId)}`));
-      if (res.ok) {
-        const rawJob: JobAd = await res.json();
-        if (rawJob && rawJob.id) {
-          const job: JobAd = {
-            ...rawJob,
-            category: resolveJobCategoryId(rawJob.category, { title: rawJob.title, subcategory: rawJob.subcategory })
-          };
-          const idx = this.jobs.findIndex(j => j.id.toLowerCase() === job.id.toLowerCase());
-          if (idx >= 0) {
-            this.jobs[idx] = job;
-          } else {
-            this.jobs.unshift(job);
-          }
-          this.saveJobsToStorage();
-          return job;
-        }
-      }
-    } catch {
-      // Network or API failure
+  // Fetch job from server API (with retry for cold starts) and keep local cache accurate
+  public async fetchJob(slugOrId: string, forceRefresh = false): Promise<JobAd | null> {
+    if (!slugOrId) return null;
+    const normalizedParam = decodeURIComponent(slugOrId).trim().replace(/\/+$/, '').replace(/\.html$/i, '');
+    if (!normalizedParam) return null;
+
+    if (!forceRefresh) {
+      const existing = this.getJobBySlug(normalizedParam);
+      if (existing) return existing;
     }
 
-    return null;
+    try {
+      const { res, data, isJson } = await this.fetchJsonWithRetry(
+        `/api/jobs/${encodeURIComponent(normalizedParam)}`,
+        { method: 'GET' },
+        2
+      );
+      if (res.ok && isJson && data && data.id) {
+        const job: JobAd = {
+          ...data,
+          category: resolveJobCategoryId(data.category, { title: data.title, subcategory: data.subcategory })
+        };
+        const idx = this.jobs.findIndex(j => j.id.toLowerCase() === job.id.toLowerCase());
+        if (idx >= 0) {
+          this.jobs[idx] = job;
+        } else {
+          this.jobs.unshift(job);
+        }
+        this.saveJobsToStorage();
+        return job;
+      }
+
+      // Authoritative 404 from backend means job is deleted, hidden, or invalid
+      if (res.status === 404 && isJson) {
+        this.removeCachedJobBySlugOrId(normalizedParam);
+        return null;
+      }
+    } catch {
+      // Network or transient server failure: fall back cleanly to local cache if available
+    }
+
+    return this.getJobBySlug(normalizedParam) || null;
   }
 
   // --- Jobs CRUD ---
@@ -409,17 +418,21 @@ class StorageService {
   public getJobBySlug(slugOrId: string): JobAd | undefined {
     if (!slugOrId) return undefined;
     try {
-      const clean = decodeURIComponent(slugOrId).trim().toLowerCase();
+      const clean = decodeURIComponent(slugOrId)
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\.html$/i, '')
+        .toLowerCase();
+      if (!clean) return undefined;
+
       const allJobs = this.getJobs();
 
       // Check SSR initial job first if available
       if (typeof window !== 'undefined' && (window as any).__INITIAL_JOB__) {
         const ssr = (window as any).__INITIAL_JOB__ as JobAd;
-        if (
-          (ssr.slug && ssr.slug.toLowerCase() === clean) ||
-          (ssr.id && ssr.id.toLowerCase() === clean) ||
-          clean.includes((ssr.id || '').toLowerCase())
-        ) {
+        const ssrSlug = (ssr.slug || '').toLowerCase();
+        const ssrId = (ssr.id || '').toLowerCase();
+        if (ssrSlug === clean || ssrId === clean) {
           return ssr;
         }
       }
@@ -428,24 +441,27 @@ class StorageService {
       const exactSlug = allJobs.find(j => j.slug && j.slug.toLowerCase() === clean);
       if (exactSlug) return exactSlug;
 
-      // 2. Exact match on ID (e.g. GF-901 or gf-901)
+      // 2. Exact match on ID (e.g. GF-8136 or gf-8136)
       const exactId = allJobs.find(j => j.id && j.id.toLowerCase() === clean);
       if (exactId) return exactId;
 
-      // 3. ID without prefix or numbers only (e.g. 901 -> GF-901)
-      const digitsOnly = clean.replace(/[^0-9]/g, '');
-      if (digitsOnly) {
-        const idNumericMatch = allJobs.find(j => j.id && j.id.replace(/[^0-9]/g, '') === digitsOnly);
+      // 3. Exact numeric ID (8136) or trailing -<digits> slug ID suffix (e.g. building-surveyor-riyadh-8136 -> GF-8136)
+      const pureDigitsMatch = clean.match(/^(?:gf-)?(\d+)$/);
+      const trailingDigitsMatch = clean.match(/-(\d+)$/);
+      const idDigits = pureDigitsMatch?.[1] || trailingDigitsMatch?.[1];
+      if (idDigits) {
+        const idNumericMatch = allJobs.find(j => j.id && j.id.replace(/[^0-9]/g, '') === idDigits);
         if (idNumericMatch) return idNumericMatch;
       }
 
-      // 4. Slug substring or hyphen-separated suffix match
-      const partialMatch = allJobs.find(j => {
-        const jId = (j.id || '').toLowerCase();
-        const jSlug = (j.slug || '').toLowerCase();
-        return clean.includes(jId) || jSlug.includes(clean);
-      });
-      if (partialMatch) return partialMatch;
+      // 4. Safe partial slug fallback (require meaningful length >= 4 and non-empty strings)
+      if (clean.length >= 4) {
+        const partialMatch = allJobs.find(j => {
+          const jSlug = (j.slug || '').trim().toLowerCase();
+          return jSlug.length >= 4 && (jSlug.includes(clean) || clean.includes(jSlug));
+        });
+        if (partialMatch) return partialMatch;
+      }
 
       return undefined;
     } catch {
@@ -580,15 +596,18 @@ class StorageService {
     const id = `GF-${randomIdNumber}`;
     
     // Create SEO-friendly slug
-    const cleanTitle = adData.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '')
-      .slice(0, 45);
-    const cleanCity = adData.city
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-');
-    const slug = `${cleanTitle}-${cleanCity}-${randomIdNumber}`;
+    const cleanTitle =
+      (adData.title || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '')
+        .slice(0, 45) || 'job';
+    const cleanCity =
+      (adData.city || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '') || 'gcc';
+    const slug = `${cleanTitle}-${cleanCity}-${randomIdNumber}`.replace(/-+/g, '-');
 
     const now = new Date();
     // Default 30 days active lifecycle

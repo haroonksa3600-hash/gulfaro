@@ -65,9 +65,12 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
   }, [job.id]);
 
   const getPublicJobUrl = (): string => {
-    const slugOrId = job.slug || job.id;
+    const slugOrId = encodeURIComponent(job.slug || job.id);
     if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
+      const hostname = window.location.hostname.toLowerCase();
+      if (hostname === 'gulfaro.net' || hostname === 'www.gulfaro.net') {
+        return `https://www.gulfaro.net/job/${slugOrId}`;
+      }
       if (
         hostname !== 'localhost' &&
         hostname !== '127.0.0.1' &&
@@ -78,10 +81,13 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
         return `${window.location.origin}/job/${slugOrId}`;
       }
     }
-    return `https://gulfaro.com/job/${slugOrId}`;
+    return `https://www.gulfaro.net/job/${slugOrId}`;
   };
 
   const canonicalShareUrl = getPublicJobUrl();
+  const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(
+    `${job.title} – ${job.company} (${job.city}, ${countryInfo?.name || 'GCC'})\nApply directly on Gulfaro:\n${canonicalShareUrl}`
+  )}`;
 
   const handleShare = async () => {
     if (typeof navigator !== 'undefined' && navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
@@ -551,10 +557,19 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                   onClick={handleShare}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-teal-700 text-white shrink-0 flex items-center gap-1"
                 >
-                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
                   <span>{copiedLink ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
+              <a
+                href={whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share via WhatsApp</span>
+              </a>
             </div>
 
             {/* Ad Container (Separated with generous margin) */}

@@ -73,30 +73,38 @@ if (!fs.existsSync(DATA_DIR)) {
 // Find job by slug, ID, or numeric digits (case-insensitive)
 function findJobInList(jobs: any[], rawParam: string): any | undefined {
   if (!rawParam) return undefined;
-  const clean = decodeURIComponent(rawParam).trim().toLowerCase();
+  const clean = decodeURIComponent(rawParam)
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\.html$/i, '')
+    .toLowerCase();
+  if (!clean) return undefined;
 
   // 1. Exact match on slug
   const matchSlug = jobs.find(j => j.slug && j.slug.toLowerCase() === clean);
   if (matchSlug) return matchSlug;
 
-  // 2. Exact match on ID (e.g. GF-905 or gf-905)
+  // 2. Exact match on ID (e.g. GF-8136 or gf-8136)
   const matchId = jobs.find(j => j.id && j.id.toLowerCase() === clean);
   if (matchId) return matchId;
 
-  // 3. Digits-only match (e.g. 905 matches GF-905)
-  const digits = clean.replace(/[^0-9]/g, '');
-  if (digits) {
-    const matchDigits = jobs.find(j => j.id && j.id.replace(/[^0-9]/g, '') === digits);
+  // 3. Pure numeric ID (8136) or trailing -<digits> suffix (building-surveyor-riyadh-8136 -> GF-8136)
+  const pureDigitsMatch = clean.match(/^(?:gf-)?(\d+)$/);
+  const trailingDigitsMatch = clean.match(/-(\d+)$/);
+  const idDigits = pureDigitsMatch?.[1] || trailingDigitsMatch?.[1];
+  if (idDigits) {
+    const matchDigits = jobs.find(j => j.id && j.id.replace(/[^0-9]/g, '') === idDigits);
     if (matchDigits) return matchDigits;
   }
 
-  // 4. Substring slug match
-  const matchSub = jobs.find(j => {
-    const jId = (j.id || '').toLowerCase();
-    const jSlug = (j.slug || '').toLowerCase();
-    return clean.includes(jId) || jSlug.includes(clean);
-  });
-  if (matchSub) return matchSub;
+  // 4. Safe partial slug fallback (require meaningful length >= 4 and non-empty strings)
+  if (clean.length >= 4) {
+    const matchSub = jobs.find(j => {
+      const jSlug = (j.slug || '').trim().toLowerCase();
+      return jSlug.length >= 4 && (jSlug.includes(clean) || clean.includes(jSlug));
+    });
+    if (matchSub) return matchSub;
+  }
 
   return undefined;
 }
@@ -303,7 +311,7 @@ async function startServer() {
     const forwardedProto = req.headers['x-forwarded-proto'];
     const proto = forwardedProto ? (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) : (req.secure ? 'https' : 'http');
     const forwardedHost = req.headers['x-forwarded-host'];
-    const host = forwardedHost ? (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) : (req.headers.host || 'gulfaro.com');
+    const host = forwardedHost ? (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) : (req.headers.host || 'www.gulfaro.net');
     return `${proto}://${host}`;
   }
 
@@ -1047,15 +1055,18 @@ async function startServer() {
       }
       const id = adData.id || generatedId;
 
-      const cleanTitle = (adData.title || 'vacancy')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '')
-        .slice(0, 45);
-      const cleanCity = (adData.city || 'gcc')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-');
-      const slug = adData.slug || `${cleanTitle}-${cleanCity}-${randomIdNumber}`;
+      const cleanTitle =
+        (adData.title || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)+/g, '')
+          .slice(0, 45) || 'job';
+      const cleanCity =
+        (adData.city || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)+/g, '') || 'gcc';
+      const slug = (adData.slug || `${cleanTitle}-${cleanCity}-${randomIdNumber}`).replace(/-+/g, '-');
 
       const now = new Date();
       const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -1197,8 +1208,11 @@ async function startServer() {
 
   function getCanonicalBaseOrigin(req: Request): string {
     const raw = getAppBaseUrl(req).replace(/\/+$/, '');
-    if (/localhost|127\.0\.0\.1|ais-dev-|webcontainer/i.test(raw)) {
-      return 'https://gulfaro.com';
+    if (/localhost|127\.0\.0\.1|ais-dev-|webcontainer|onrender\.com/i.test(raw)) {
+      return 'https://www.gulfaro.net';
+    }
+    if (/^https?:\/\/gulfaro\.net$/i.test(raw)) {
+      return 'https://www.gulfaro.net';
     }
     return raw;
   }
@@ -1225,7 +1239,7 @@ async function startServer() {
     }
   ): string {
     const canonicalUrl = `${meta.origin}${meta.canonicalPath.startsWith('/') ? meta.canonicalPath : `/${meta.canonicalPath}`}`;
-    const ogImage = `${meta.origin}/assets/aistudio/Gulfaro_logo_white_clean.png`;
+    const ogImage = `${meta.origin}/pwa-512x512.png`;
     const safeTitle = escapeHtml(meta.title);
     const safeDesc = escapeHtml(meta.description);
     const safeRobots = escapeHtml(meta.robots || 'index, follow');
@@ -1262,6 +1276,99 @@ async function startServer() {
 
     return out.replace('</head>', `${seoBlock}\n  </head>`);
   }
+
+  // Server-side OpenGraph / WhatsApp / Facebook Share Preview HTML (works even on API-only Render deploy)
+  app.get(['/share/job/:idOrSlug', '/api/share/job/:idOrSlug'], async (req: Request, res: Response) => {
+    try {
+      const { idOrSlug } = req.params;
+      const [jobs, settings] = await Promise.all([getJobs(), getSiteSettings()]);
+      const matchedJob =
+        settings.emergency.hideAllPublicJobs || settings.emergency.emergencyShutdown
+          ? undefined
+          : findJobInList(jobs, idOrSlug);
+
+      const frontendOrigin = getCanonicalBaseOrigin(req);
+
+      if (!matchedJob || matchedJob.status === 'hidden' || matchedJob.status === 'rejected') {
+        const notFoundUrl = `${frontendOrigin}/job/${encodeURIComponent(idOrSlug)}`;
+        return res
+          .status(404)
+          .set({ 'Content-Type': 'text/html; charset=utf-8' })
+          .send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Job Advertisement Not Found | Gulfaro</title>
+    <meta name="description" content="The requested job vacancy on Gulfaro is no longer available or has been removed. Browse active GCC job vacancies." />
+    <meta name="robots" content="noindex, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Gulfaro" />
+    <meta property="og:title" content="Job Advertisement Not Found | Gulfaro" />
+    <meta property="og:description" content="The requested job vacancy is no longer available. Browse active opportunities across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman." />
+    <meta property="og:url" content="${escapeHtml(notFoundUrl)}" />
+    <meta property="og:image" content="${escapeHtml(frontendOrigin)}/pwa-512x512.png" />
+    <script>window.location.replace(${JSON.stringify(notFoundUrl)});</script>
+  </head>
+  <body>
+    <p>Redirecting to <a href="${escapeHtml(notFoundUrl)}">Gulfaro</a>...</p>
+  </body>
+</html>`);
+      }
+
+      const active = isJobActiveAndUnexpired(matchedJob as any);
+      const countryInfo = GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES];
+      const countryName = countryInfo?.name || matchedJob.country;
+      const slugOrId = matchedJob.slug || matchedJob.id;
+      const jobCanonicalUrl = `${frontendOrigin}/job/${encodeURIComponent(slugOrId)}`;
+      const ogImage = `${frontendOrigin}/pwa-512x512.png`;
+      const cleanDesc = (matchedJob.description || '').replace(/\s+/g, ' ').trim();
+      const summaryDesc =
+        cleanDesc.length > 160
+          ? `${cleanDesc.slice(0, 157)}...`
+          : cleanDesc || `${matchedJob.title} at ${matchedJob.company} in ${matchedJob.city}, ${countryName}.`;
+      const pageTitle = active
+        ? `${matchedJob.title} – ${matchedJob.company} (${matchedJob.city}, ${countryName}) | Gulfaro`
+        : `${matchedJob.title} (Expired) – ${matchedJob.company} | Gulfaro`;
+
+      const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(pageTitle)}</title>
+    <meta name="description" content="${escapeHtml(summaryDesc)}" />
+    <meta name="robots" content="${active ? 'index, follow' : 'noindex, follow'}" />
+    <link rel="canonical" href="${escapeHtml(jobCanonicalUrl)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Gulfaro" />
+    <meta property="og:title" content="${escapeHtml(pageTitle)}" />
+    <meta property="og:description" content="${escapeHtml(summaryDesc)}" />
+    <meta property="og:url" content="${escapeHtml(jobCanonicalUrl)}" />
+    <meta property="og:image" content="${escapeHtml(ogImage)}" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(pageTitle)}" />
+    <meta name="twitter:description" content="${escapeHtml(summaryDesc)}" />
+    <meta name="twitter:image" content="${escapeHtml(ogImage)}" />
+    <script>window.location.replace(${JSON.stringify(jobCanonicalUrl)});</script>
+  </head>
+  <body>
+    <main style="font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 16px;">
+      <h1>${escapeHtml(matchedJob.title)}</h1>
+      <p><strong>${escapeHtml(matchedJob.company)}</strong> · ${escapeHtml(matchedJob.city)}, ${escapeHtml(countryName)}</p>
+      <p>${escapeHtml(summaryDesc)}</p>
+      <p><a href="${escapeHtml(jobCanonicalUrl)}">View Full Vacancy on Gulfaro</a></p>
+    </main>
+  </body>
+</html>`;
+
+      return res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(html);
+    } catch (err) {
+      console.error('Error rendering share preview:', err);
+      return res.redirect(302, 'https://www.gulfaro.net/');
+    }
+  });
 
   // Dynamic robots.txt for search crawlers
   app.get('/robots.txt', (req: Request, res: Response) => {
@@ -1627,7 +1734,7 @@ ${xmlItems}
               publisher: {
                 '@type': 'Organization',
                 name: 'Gulfaro',
-                logo: { '@type': 'ImageObject', url: `${origin}/assets/aistudio/Gulfaro_logo_white_clean.png` }
+                logo: { '@type': 'ImageObject', url: `${origin}/pwa-512x512.png` }
               },
               mainEntityOfPage: `${origin}/career-advice/${article.slug}`
             },

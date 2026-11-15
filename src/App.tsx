@@ -109,23 +109,24 @@ export default function App() {
   const extractJobSlugOrId = (pathnameArg?: string): string | null => {
     if (typeof window === 'undefined') return null;
     try {
-      const pathname = pathnameArg ?? window.location.pathname;
+      const rawPath = pathnameArg ?? window.location.pathname;
+      const pathname = rawPath.split('?')[0].replace(/\/+$/, '') || '/';
       const search = window.location.search;
       const hash = window.location.hash;
 
-      const pathMatch = pathname.match(/^\/jobs?\/([^/?#]+)/i);
+      const pathMatch = pathname.match(/^\/jobs?\/([^/?#]+)$/i);
       if (pathMatch && pathMatch[1]) {
-        const candidate = decodeURIComponent(pathMatch[1]).trim();
+        const candidate = decodeURIComponent(pathMatch[1]).replace(/\.html$/i, '').trim();
         if (candidate && candidate !== 'all') return candidate;
       }
 
-      if (search) {
+      if (!pathnameArg && search) {
         const params = new URLSearchParams(search);
         const queryJob = params.get('job') || params.get('id') || params.get('ref');
         if (queryJob) return decodeURIComponent(queryJob).trim();
       }
 
-      if (hash) {
+      if (!pathnameArg && hash) {
         const hashClean = hash.replace(/^#\/?/, '');
         const hashPathMatch = hashClean.match(/^jobs?\/([^/?#&]+)/i);
         if (hashPathMatch && hashPathMatch[1]) {
@@ -145,10 +146,7 @@ export default function App() {
     setIsJobLoading(true);
     setJobNotFoundSlug(null);
 
-    let found = storageService.getJobBySlug(slugOrId);
-    if (!found) {
-      found = (await storageService.fetchJob(slugOrId)) || undefined;
-    }
+    const found = await storageService.fetchJob(slugOrId, true);
 
     setIsJobLoading(false);
 
@@ -174,6 +172,7 @@ export default function App() {
       } else {
         setSelectedJob(null);
         setJobNotFoundSlug(null);
+        setActiveTab('jobs');
       }
     };
     window.addEventListener('popstate', handlePopState);

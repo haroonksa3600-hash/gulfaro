@@ -11,11 +11,14 @@ export interface RouteSeoMetadata {
   jsonLd?: Record<string, any> | null;
 }
 
-const PROD_ORIGIN = 'https://gulfaro.com';
+const PROD_ORIGIN = 'https://www.gulfaro.net';
 
 export function getPublicOrigin(): string {
   if (typeof window !== 'undefined') {
-    const h = window.location.hostname;
+    const h = window.location.hostname.toLowerCase();
+    if (h === 'gulfaro.net' || h === 'www.gulfaro.net') {
+      return PROD_ORIGIN;
+    }
     if (
       h !== 'localhost' &&
       h !== '127.0.0.1' &&
@@ -72,7 +75,7 @@ export function applyRouteSeo(meta: RouteSeoMetadata) {
   if (typeof document === 'undefined') return;
   const origin = getPublicOrigin();
   const canonicalUrl = `${origin}${meta.canonicalPath.startsWith('/') ? meta.canonicalPath : `/${meta.canonicalPath}`}`;
-  const ogImage = `${origin}/assets/aistudio/Gulfaro_logo_white_clean.png`;
+  const ogImage = `${origin}/pwa-512x512.png`;
 
   document.title = meta.title;
   setOrUpdateMeta('name', 'description', meta.description);
@@ -169,7 +172,7 @@ export function buildArticleSchema(article: CareerArticle): Record<string, any> 
       name: 'Gulfaro',
       logo: {
         '@type': 'ImageObject',
-        url: `${origin}/assets/aistudio/Gulfaro_logo_white_clean.png`
+        url: `${origin}/pwa-512x512.png`
       }
     },
     mainEntityOfPage: `${origin}/career-advice/${article.slug}`
@@ -183,7 +186,7 @@ export function buildOrganizationSchema(): Record<string, any> {
     '@type': 'Organization',
     name: 'Gulfaro',
     url: origin,
-    logo: `${origin}/assets/aistudio/Gulfaro_logo_white_clean.png`,
+    logo: `${origin}/pwa-512x512.png`,
     email: 'admingulfaro@gmail.com',
     areaServed: ['Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Bahrain', 'Oman']
   };
