@@ -134,10 +134,12 @@ function isAllowedCorsOrigin(origin: string): boolean {
     }
   }
 
-  // Always allow official Gulfaro domains, Hostinger preview domains, and local dev origins
+  // Always allow official Gulfaro domains (.net & .com), Hostinger preview domains, AI Studio preview, and local dev origins
   if (
+    /^https:\/\/([a-z0-9-]+\.)?gulfaro\.net$/i.test(normalized) ||
     /^https:\/\/([a-z0-9-]+\.)?gulfaro\.com$/i.test(normalized) ||
     /^https:\/\/[a-z0-9-]+\.hostingersite\.com$/i.test(normalized) ||
+    /^https:\/\/[a-z0-9-]+\.run\.app$/i.test(normalized) ||
     /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)
   ) {
     return true;

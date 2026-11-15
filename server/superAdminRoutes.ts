@@ -114,7 +114,16 @@ function setSessionCookie(res: Response, req: Request, token: string, rememberMe
 }
 
 function clearSessionCookie(res: Response) {
-  res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+  const req = res.req;
+  const isHttps = Boolean(req && (req.secure || req.headers['x-forwarded-proto'] === 'https'));
+  const originHeader = req && typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  const isCrossOrigin = Boolean(req && originHeader && req.headers.host && !originHeader.includes(req.headers.host));
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    path: '/',
+    httpOnly: true,
+    sameSite: isCrossOrigin && isHttps ? 'none' : 'lax',
+    secure: isHttps
+  });
 }
 
 function sanitizeAdmin(a: AdminAccount) {
