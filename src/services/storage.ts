@@ -2,6 +2,7 @@ import { JobAd, User, GccCountry, GCC_COUNTRIES } from '../types/job';
 import { INITIAL_JOB_ADS } from '../data/seedJobs';
 import { AdSenseConfig, DEFAULT_ADSENSE_CONFIG } from '../types/adsense';
 import { resolveJobCategoryId } from '../data/categories';
+import { apiUrl } from './apiConfig';
 
 const STORAGE_KEY_JOBS = 'golfaro_jobs_v1';
 const STORAGE_KEY_SAVED = 'golfaro_saved_jobs_v1';
@@ -320,7 +321,7 @@ class StorageService {
 
   public async syncWithServer(): Promise<JobAd[]> {
     try {
-      const res = await fetch('/api/jobs');
+      const res = await fetch(apiUrl('/api/jobs'));
       if (res.ok) {
         const serverJobs: JobAd[] = await res.json();
         if (Array.isArray(serverJobs) && serverJobs.length > 0) {
@@ -363,7 +364,7 @@ class StorageService {
 
     // 2. Fetch directly from server API
     try {
-      const res = await fetch(`/api/jobs/${encodeURIComponent(slugOrId)}`);
+      const res = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(slugOrId)}`));
       if (res.ok) {
         const rawJob: JobAd = await res.json();
         if (rawJob && rawJob.id) {
@@ -463,7 +464,7 @@ class StorageService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
       try {
-        const res = await fetch(url, {
+        const res = await fetch(apiUrl(url), {
           ...init,
           signal: controller.signal
         });
@@ -601,11 +602,13 @@ class StorageService {
     // Persist to server database API so shared link works across any other browser or device
     if (typeof window !== 'undefined') {
       const requesterId = this.currentUser?.id || adData.userId || '';
-      fetch('/api/jobs', {
+      const requesterEmail = this.currentUser?.email || '';
+      fetch(apiUrl('/api/jobs'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
+          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
         },
         body: JSON.stringify(newJob)
       }).catch(err => console.warn('Could not sync created job to server:', err));
@@ -693,7 +696,7 @@ class StorageService {
     if (typeof window !== 'undefined') {
       const requesterId = this.currentUser?.id || '';
       const requesterEmail = this.currentUser?.email || '';
-      fetch(`/api/jobs/${encodeURIComponent(this.jobs[index].id)}`, {
+      fetch(apiUrl(`/api/jobs/${encodeURIComponent(this.jobs[index].id)}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -753,11 +756,13 @@ class StorageService {
       // Delete from server database API
       if (typeof window !== 'undefined' && targetJob) {
         const requesterId = this.currentUser?.id || '';
-        fetch(`/api/jobs/${encodeURIComponent(targetJob.id)}?userId=${encodeURIComponent(requesterId)}`, {
+        const requesterEmail = this.currentUser?.email || '';
+        fetch(apiUrl(`/api/jobs/${encodeURIComponent(targetJob.id)}?userId=${encodeURIComponent(requesterId)}`), {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {})
+            ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
+            ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
           },
           body: JSON.stringify({ requesterUserId: requesterId })
         }).catch(err => console.warn('Could not sync deleted job to server:', err));
@@ -854,7 +859,7 @@ class StorageService {
 
   public async syncUsersWithServer(): Promise<User[]> {
     try {
-      const res = await fetch('/api/auth/users');
+      const res = await fetch(apiUrl('/api/auth/users'));
       if (res.ok) {
         const serverUsers: User[] = await res.json();
         if (Array.isArray(serverUsers) && serverUsers.length > 0) {
@@ -915,7 +920,7 @@ class StorageService {
     // 1. Try server-side authentication
     try {
       console.log('[Gulfaro Auth] Attempting server /api/auth/login...');
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inputEmail, identifier: inputEmail, password: inputPassword })
@@ -1166,7 +1171,7 @@ class StorageService {
 
   public async checkDuplicateAccountAsync(email?: string, phone?: string): Promise<{ exists: boolean; field?: 'email' | 'phone'; message?: string }> {
     try {
-      const res = await fetch('/api/auth/check-duplicate', {
+      const res = await fetch(apiUrl('/api/auth/check-duplicate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email ? email.toLowerCase().trim() : undefined, phone })
@@ -1359,7 +1364,7 @@ class StorageService {
 
   public async sendEmployerVerificationAsync(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; code?: string }> {
     try {
-      const res = await fetch('/api/auth/send-employer-verification', {
+      const res = await fetch(apiUrl('/api/auth/send-employer-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -1376,7 +1381,7 @@ class StorageService {
 
   public async verifyEmployerEmailAsync(email: string, code: string): Promise<{ success: boolean; message?: string; error?: string; user?: User }> {
     try {
-      const res = await fetch('/api/auth/verify-employer-email', {
+      const res = await fetch(apiUrl('/api/auth/verify-employer-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code })
@@ -1434,7 +1439,7 @@ class StorageService {
    */
   public async verifyAccessKeyAsync(email: string, accessKey: string): Promise<{ success: boolean; token?: string; error?: string }> {
     try {
-      const res = await fetch('/api/auth/verify-access-key', {
+      const res = await fetch(apiUrl('/api/auth/verify-access-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1467,7 +1472,7 @@ class StorageService {
     email?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const res = await fetch('/api/auth/reset-password-access-key', {
+      const res = await fetch(apiUrl('/api/auth/reset-password-access-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

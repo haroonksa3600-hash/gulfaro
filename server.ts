@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { createServer as createViteServer, ViteDevServer } from 'vite';
+import type { ViteDevServer } from 'vite';
 
 dotenv.config();
 
@@ -111,11 +111,69 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function isAllowedCorsOrigin(origin: string): boolean {
+  const normalized = origin.trim().replace(/\/+$/, '');
+  if (!normalized) return false;
+
+  const configuredRaw = [
+    process.env.CORS_ORIGIN,
+    process.env.ALLOWED_ORIGINS,
+    process.env.FRONTEND_URL,
+    process.env.APP_URL
+  ]
+    .filter(Boolean)
+    .join(',');
+
+  if (configuredRaw) {
+    const entries = configuredRaw
+      .split(',')
+      .map(s => s.trim().replace(/\/+$/, ''))
+      .filter(Boolean);
+    if (entries.includes('*') || entries.includes(normalized)) {
+      return true;
+    }
+  }
+
+  // Always allow official Gulfaro domains, Hostinger preview domains, and local dev origins
+  if (
+    /^https:\/\/([a-z0-9-]+\.)?gulfaro\.com$/i.test(normalized) ||
+    /^https:\/\/[a-z0-9-]+\.hostingersite\.com$/i.test(normalized) ||
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 async function startServer() {
   initializeSuperAdminStores();
 
   const app = express();
   const httpServer = http.createServer(app);
+
+  // Required behind Render / Cloud Run HTTPS reverse proxies
+  app.set('trust proxy', 1);
+
+  // Express CORS middleware allowing Hostinger production domain & local preview
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
+    if (typeof origin === 'string' && isAllowedCorsOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, x-gulfaro-user-id, x-gulfaro-user-email'
+      );
+    }
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    return next();
+  });
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -234,10 +292,11 @@ async function startServer() {
     });
   });
 
-  // Helper to determine active public base URL for emails and links
+  // Helper to determine active public frontend base URL for emailed links
   function getAppBaseUrl(req: Request): string {
-    if (process.env.APP_URL) {
-      return process.env.APP_URL;
+    const configured = (process.env.FRONTEND_URL || process.env.APP_URL || '').trim().replace(/\/+$/, '');
+    if (configured) {
+      return configured;
     }
     const forwardedProto = req.headers['x-forwarded-proto'];
     const proto = forwardedProto ? (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) : (req.secure ? 'https' : 'http');
@@ -1328,6 +1387,7 @@ ${xmlItems}
   let vite: ViteDevServer | null = null;
 
   if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -1338,9 +1398,11 @@ ${xmlItems}
     });
     app.use(vite.middlewares);
   } else {
-    // In production, serve static files from dist
+    // In production, serve static files from dist when bundled together (optional on API-only Render)
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath, { index: false }));
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath, { index: false }));
+    }
   }
 
   // Universal HTML Handler with Route-Aware SEO, OpenGraph Card & SSR Initial Job Data Injection
@@ -1363,7 +1425,12 @@ ${xmlItems}
         if (fs.existsSync(indexPath)) {
           template = fs.readFileSync(indexPath, 'utf-8');
         } else {
-          template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+          // API-only deployment (e.g. Render backend while frontend runs on Hostinger)
+          return res.status(200).json({
+            service: 'Gulfaro Backend API',
+            status: 'ok',
+            health: '/api/health'
+          });
         }
       }
 

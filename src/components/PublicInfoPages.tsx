@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PublicPlatformConfig } from '../services/siteConfig';
+import { apiUrl } from '../services/apiConfig';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -57,7 +58,7 @@ export const PublicInfoPages: React.FC<PublicInfoPagesProps> = ({
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/reports', {
+      const res = await fetch(apiUrl('/api/reports'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

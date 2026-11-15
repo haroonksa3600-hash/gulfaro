@@ -1,4 +1,5 @@
 import { storageService } from './storage';
+import { apiUrl } from './apiConfig';
 
 export interface SendResetResult {
   success: boolean;
@@ -29,7 +30,7 @@ class EmailService {
     }
 
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetch(apiUrl('/api/auth/forgot-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -71,7 +72,7 @@ class EmailService {
     const email = rawEmail.trim().toLowerCase();
 
     try {
-      const response = await fetch('/api/auth/verify-reset-token', {
+      const response = await fetch(apiUrl('/api/auth/verify-reset-token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, email })
@@ -130,7 +131,7 @@ class EmailService {
 
     // 2. Submit to backend API
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(apiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -75,7 +75,8 @@ function getClientIp(req: Request): string {
 }
 
 function getAppBaseUrl(req: Request): string {
-  if (process.env.APP_URL) return process.env.APP_URL;
+  const configured = (process.env.FRONTEND_URL || process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (configured) return configured;
   const fwdProto = req.headers['x-forwarded-proto'];
   const proto = fwdProto ? (Array.isArray(fwdProto) ? fwdProto[0] : fwdProto) : (req.secure ? 'https' : 'http');
   const fwdHost = req.headers['x-forwarded-host'];
@@ -100,10 +101,12 @@ function parseCookies(req: Request): Record<string, string> {
 
 function setSessionCookie(res: Response, req: Request, token: string, rememberMe: boolean) {
   const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  const isCrossOrigin = Boolean(originHeader && req.headers.host && !originHeader.includes(req.headers.host));
   const maxAgeMs = rememberMe ? 7 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: isCrossOrigin && isHttps ? 'none' : 'lax',
     secure: isHttps,
     path: '/',
     maxAge: maxAgeMs

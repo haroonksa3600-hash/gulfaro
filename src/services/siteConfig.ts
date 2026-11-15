@@ -1,3 +1,5 @@
+import { apiUrl } from './apiConfig';
+
 export interface PublicPlatformConfig {
   cms: {
     siteName: string;
@@ -57,7 +59,7 @@ export interface PublicPlatformConfig {
 
 export async function fetchPublicPlatformConfig(): Promise<PublicPlatformConfig | null> {
   try {
-    const res = await fetch('/api/public/config', { cache: 'no-store' });
+    const res = await fetch(apiUrl('/api/public/config'), { cache: 'no-store' });
     if (!res.ok) return null;
     return (await res.json()) as PublicPlatformConfig;
   } catch {

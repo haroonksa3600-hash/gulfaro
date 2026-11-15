@@ -1,3 +1,5 @@
+import { apiUrl } from '../../services/apiConfig';
+
 const SA_TOKEN_KEY = 'gulfaro_sa_token_v1';
 
 let unauthorizedHandler: (() => void) | null = null;
@@ -50,7 +52,7 @@ export async function saFetch<T = any>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`/api/super-admin${endpoint}`, {
+  const res = await fetch(apiUrl(`/api/super-admin${endpoint}`), {
     ...options,
     credentials: 'include',
     headers
@@ -82,7 +84,7 @@ export async function saDownloadFile(endpoint: string, filename: string): Promis
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`/api/super-admin${endpoint}`, {
+  const res = await fetch(apiUrl(`/api/super-admin${endpoint}`), {
     credentials: 'include',
     headers
   });

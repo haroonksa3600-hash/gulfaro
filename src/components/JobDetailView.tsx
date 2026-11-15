@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { JobAd, GCC_COUNTRIES, User } from '../types/job';
+import { apiUrl } from '../services/apiConfig';
 import { getJobCategoryName, jobMatchesCategoryFilter } from '../data/categories';
 import { isJobActiveAndUnexpired } from '../data/gccDirectory';
 import { storageService } from '../services/storage';
@@ -131,7 +132,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
     setReportError(null);
     setReportSubmitting(true);
     try {
-      const res = await fetch('/api/reports', {
+      const res = await fetch(apiUrl('/api/reports'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
