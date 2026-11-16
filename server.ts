@@ -1009,7 +1009,7 @@ async function startServer() {
         });
       }
 
-      // Required field checks
+      // Required field checks (Company Name, Contact Person, Required Experience, and Education are optional)
       if (!adData.title || String(adData.title).trim().length < 2) {
         return res.status(400).json({ error: 'Job Title is required.', invalidFields: ['title'] });
       }
@@ -1023,14 +1023,24 @@ async function startServer() {
       if (!adData.description || String(adData.description).trim().length < 10) {
         return res.status(400).json({ error: 'Job Description must be at least 10 characters.', invalidFields: ['description'] });
       }
-      if (!adData.company || String(adData.company).trim().length < 2) {
-        return res.status(400).json({ error: 'Company Name is required.', invalidFields: ['company'] });
-      }
-      if (!adData.contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(adData.contactEmail).trim())) {
-        return res.status(400).json({ error: 'A valid Contact Email address is required.', invalidFields: ['contactEmail'] });
-      }
-      if (!adData.contactPhone || String(adData.contactPhone).replace(/\D/g, '').length < 6) {
-        return res.status(400).json({ error: 'A valid Contact Phone Number is required.', invalidFields: ['contactPhone'] });
+
+      const rawEmail = String(adData.contactEmail || '').trim();
+      const rawPhone = String(adData.contactPhone || '').trim();
+      const explicitContactMethod =
+        adData.contactMethod === 'phone' || adData.contactMethod === 'email'
+          ? adData.contactMethod
+          : undefined;
+      const resolvedContactMethod: 'email' | 'phone' =
+        explicitContactMethod || (rawPhone && !rawEmail ? 'phone' : 'email');
+
+      if (resolvedContactMethod === 'phone') {
+        if (!rawPhone || rawPhone.replace(/\D/g, '').length < 6) {
+          return res.status(400).json({ error: 'A valid Contact Phone Number is required.', invalidFields: ['contactPhone'] });
+        }
+      } else {
+        if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+          return res.status(400).json({ error: 'A valid Contact Email address is required.', invalidFields: ['contactEmail'] });
+        }
       }
 
       if (settings.registration.spamProtectionEnabled) {
@@ -1071,8 +1081,6 @@ async function startServer() {
       const now = new Date();
       const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-      const cleanPhoneDigits = String(adData.contactPhone || '').replace(/[^0-9+]/g, '');
-
       if (adData.howToApply && adData.howToApply !== 'email') {
         return res.status(400).json({
           error: 'Gulfaro online applications are disabled. Candidates must apply directly via contact email or phone number.'
@@ -1084,15 +1092,30 @@ async function startServer() {
           ? String(adData.subcategory).trim()
           : undefined;
 
+      const finalContactEmail =
+        explicitContactMethod === 'phone' ? '' : rawEmail;
+      const finalContactPhone =
+        explicitContactMethod === 'email' ? '' : rawPhone;
+      const cleanPhoneDigits = finalContactPhone.replace(/[^0-9+]/g, '');
+
       const newJob = {
         ...adData,
         id,
         slug,
         userId: postingUser.id,
+        company: String(adData.company || '').trim(),
+        contactPerson: String(adData.contactPerson || '').trim(),
+        experienceLevel: String(adData.experienceLevel || '').trim(),
+        educationLevel: String(adData.educationLevel || '').trim(),
         category: resolveJobCategoryId(rawCategory),
         subcategory: normalizedSubcategory,
         vacanciesCount: Math.max(1, Number(adData.vacanciesCount) || 1),
-        contactWhatsapp: adData.contactWhatsapp ? String(adData.contactWhatsapp).trim() : cleanPhoneDigits,
+        contactMethod: resolvedContactMethod,
+        contactEmail: finalContactEmail,
+        contactPhone: finalContactPhone,
+        contactWhatsapp: finalContactPhone
+          ? (adData.contactWhatsapp ? String(adData.contactWhatsapp).trim() : cleanPhoneDigits)
+          : '',
         howToApply: 'email',
         postedAt: adData.postedAt || now.toISOString(),
         expiresAt: adData.expiresAt || expiry.toISOString(),
@@ -1135,6 +1158,13 @@ async function startServer() {
         });
       }
 
+      if (updates.title !== undefined && String(updates.title).trim().length < 2) {
+        return res.status(400).json({ error: 'Job Title is required.', invalidFields: ['title'] });
+      }
+      if (updates.description !== undefined && String(updates.description).trim().length < 10) {
+        return res.status(400).json({ error: 'Job Description must be at least 10 characters.', invalidFields: ['description'] });
+      }
+
       if (updates.category !== undefined) {
         const rawUpdCat = String(updates.category || '').trim().toLowerCase();
         if (!rawUpdCat || !isValidJobCategoryId(rawUpdCat)) {
@@ -1160,6 +1190,37 @@ async function startServer() {
           invalidFields: linkCheck.invalidFields
         });
       }
+
+      // Validate and apply contact method changes cleanly while maintaining backward compatibility
+      const updMethod =
+        updates.contactMethod === 'phone' || updates.contactMethod === 'email'
+          ? updates.contactMethod
+          : undefined;
+
+      if (updMethod === 'email') {
+        const nextEmail = String(updates.contactEmail !== undefined ? updates.contactEmail : existing.contactEmail || '').trim();
+        if (!nextEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+          return res.status(400).json({ error: 'A valid Contact Email address is required.', invalidFields: ['contactEmail'] });
+        }
+        updates.contactMethod = 'email';
+        updates.contactEmail = nextEmail;
+        updates.contactPhone = '';
+        updates.contactWhatsapp = '';
+      } else if (updMethod === 'phone') {
+        const nextPhone = String(updates.contactPhone !== undefined ? updates.contactPhone : existing.contactPhone || '').trim();
+        if (!nextPhone || nextPhone.replace(/\D/g, '').length < 6) {
+          return res.status(400).json({ error: 'A valid Contact Phone Number is required.', invalidFields: ['contactPhone'] });
+        }
+        updates.contactMethod = 'phone';
+        updates.contactPhone = nextPhone;
+        updates.contactWhatsapp = nextPhone.replace(/[^0-9+]/g, '');
+        updates.contactEmail = '';
+      }
+
+      if (updates.company !== undefined) updates.company = String(updates.company || '').trim();
+      if (updates.contactPerson !== undefined) updates.contactPerson = String(updates.contactPerson || '').trim();
+      if (updates.experienceLevel !== undefined) updates.experienceLevel = String(updates.experienceLevel || '').trim();
+      if (updates.educationLevel !== undefined) updates.educationLevel = String(updates.educationLevel || '').trim();
 
       const updatedJob = {
         ...existing,
@@ -1572,7 +1633,7 @@ ${xmlItems}
           };
 
           const jobPostingJsonLd =
-            active && matchedJob.title && matchedJob.company && matchedJob.city && matchedJob.description
+            active && matchedJob.title && matchedJob.city && matchedJob.description
               ? {
                   '@context': 'https://schema.org/',
                   '@type': 'JobPosting',
@@ -1588,7 +1649,7 @@ ${xmlItems}
                   employmentType: employmentMap[matchedJob.employmentType] || 'FULL_TIME',
                   hiringOrganization: {
                     '@type': 'Organization',
-                    name: matchedJob.company
+                    name: matchedJob.company || 'Direct GCC Employer'
                   },
                   jobLocation: {
                     '@type': 'Place',
@@ -1622,12 +1683,14 @@ ${xmlItems}
                 }
               : null;
 
+          const companyTitleSuffix = matchedJob.company ? ` – ${matchedJob.company}` : '';
+          const companyAtClause = matchedJob.company ? ` at ${matchedJob.company}` : '';
           template = applyServerSeoTags(template, {
             title: active
-              ? `${matchedJob.title} – ${matchedJob.company} (${matchedJob.city}, ${countryName}) | Gulfaro`
-              : `${matchedJob.title} (Expired) – ${matchedJob.company} | Gulfaro`,
+              ? `${matchedJob.title}${companyTitleSuffix} (${matchedJob.city}, ${countryName}) | Gulfaro`
+              : `${matchedJob.title} (Expired)${companyTitleSuffix} | Gulfaro`,
             description:
-              summaryDesc || `${matchedJob.title} opportunity at ${matchedJob.company} in ${matchedJob.city}, ${countryName}.`,
+              summaryDesc || `${matchedJob.title} opportunity${companyAtClause} in ${matchedJob.city}, ${countryName}.`,
             canonicalPath: `/job/${matchedJob.slug || matchedJob.id}`,
             robots: active ? 'index, follow' : 'noindex, follow',
             ogType: 'article',

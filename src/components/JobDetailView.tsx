@@ -85,16 +85,18 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
   };
 
   const canonicalShareUrl = getPublicJobUrl();
+  const companySuffix = job.company ? ` – ${job.company}` : '';
+  const companyLocationClause = job.company ? ` at ${job.company}` : '';
   const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(
-    `${job.title} – ${job.company} (${job.city}, ${countryInfo?.name || 'GCC'})\nApply directly on Gulfaro:\n${canonicalShareUrl}`
+    `${job.title}${companySuffix} (${job.city}, ${countryInfo?.name || 'GCC'})\nApply directly on Gulfaro:\n${canonicalShareUrl}`
   )}`;
 
   const handleShare = async () => {
     if (typeof navigator !== 'undefined' && navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
       try {
         await navigator.share({
-          title: `${job.title} – ${job.company}`,
-          text: `View vacancy on Gulfaro: ${job.title} at ${job.company} (${job.city}, ${countryInfo?.name || 'GCC'})`,
+          title: `${job.title}${companySuffix}`,
+          text: `View vacancy on Gulfaro: ${job.title}${companyLocationClause} (${job.city}, ${countryInfo?.name || 'GCC'})`,
           url: canonicalShareUrl
         });
         setCopiedLink(true);
@@ -144,7 +146,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
         body: JSON.stringify({
           targetType: 'job',
           targetId: job.id,
-          targetTitle: `${job.title} — ${job.company}`,
+          targetTitle: `${job.title}${job.company ? ` — ${job.company}` : ''}`,
           category: reportCategory,
           reason: reportReason.trim() || reportCategory.replace('_', ' '),
           details: reportDetails.trim(),
@@ -281,14 +283,18 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
               </h1>
 
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 mb-5 pb-4 border-b border-slate-100">
-                <span className="font-bold text-slate-900 text-sm">{job.company}</span>
-                {isEmployerVerified && (
-                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>Verified Employer</span>
-                  </span>
+                {(job.company || isEmployerVerified) && (
+                  <>
+                    {job.company && <span className="font-bold text-slate-900 text-sm">{job.company}</span>}
+                    {isEmployerVerified && (
+                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Verified Employer</span>
+                      </span>
+                    )}
+                    <span className="text-slate-300">·</span>
+                  </>
                 )}
-                <span className="text-slate-300">·</span>
                 <span>
                   {categoryName}
                   {job.subcategory && job.subcategory.toLowerCase() !== categoryName.toLowerCase()
@@ -320,7 +326,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                 <div>
                   <span className="block text-[10px] uppercase font-bold text-slate-400">Employment Type</span>
                   <span className="font-semibold text-slate-900 capitalize">
-                    {job.employmentType.replace('-', ' ')}
+                    {(job.employmentType || 'full-time').replace(/-/g, ' ')}
                   </span>
                 </div>
 
@@ -334,7 +340,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                 <div>
                   <span className="block text-[10px] uppercase font-bold text-slate-400">Experience Required</span>
                   <span className="font-semibold text-slate-900 capitalize">
-                    {job.experienceLevel.replace('-', ' ')}
+                    {job.experienceLevel ? job.experienceLevel.replace(/-/g, ' ') : 'Not Specified'}
                   </span>
                 </div>
 
@@ -460,81 +466,98 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
 
           {/* Right Column: Application Instructions & Direct Contact */}
           <div className="space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20 space-y-4">
-              <div className="pb-3 border-b border-slate-100">
-                <span className="text-xs font-bold text-teal-700 uppercase tracking-wider block mb-1">
-                  How to Apply (Direct Contact)
-                </span>
-                <h2 className="font-bold text-slate-900 text-sm">
-                  {job.contactPerson || job.company}
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Send your CV and cover note directly to the employer via email or telephone.
-                </p>
-              </div>
+            {(() => {
+              const showEmail = Boolean(job.contactEmail) && job.contactMethod !== 'phone';
+              const showPhone = Boolean(job.contactPhone) && job.contactMethod !== 'email';
+              const contactInstruction =
+                showEmail && !showPhone
+                  ? 'Send your CV and cover note directly to the employer via email.'
+                  : !showEmail && showPhone
+                  ? 'Contact the employer directly by phone number regarding this vacancy.'
+                  : 'Send your CV and cover note directly to the employer via email or telephone.';
 
-              {isActiveListing ? (
-                <>
-                  {job.contactEmail && (
-                    <a
-                      href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
-                      onClick={() => storageService.incrementInquiries(job.id)}
-                      className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl transition-colors text-sm"
-                    >
-                      <Mail className="w-4 h-4" />
-                      <span>Apply via Direct Email</span>
-                    </a>
+              return (
+                <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20 space-y-4">
+                  <div className="pb-3 border-b border-slate-100">
+                    <span className="text-xs font-bold text-teal-700 uppercase tracking-wider block mb-1">
+                      Application Contact Details
+                    </span>
+                    <h2 className="font-bold text-slate-900 text-sm">
+                      {job.contactPerson || job.company || 'Direct Employer Contact'}
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {contactInstruction}
+                    </p>
+                  </div>
+
+                  {isActiveListing ? (
+                    <>
+                      {showEmail && (
+                        <a
+                          href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
+                          onClick={() => storageService.incrementInquiries(job.id)}
+                          className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl transition-colors text-sm"
+                        >
+                          <Mail className="w-4 h-4" />
+                          <span>Apply via Direct Email</span>
+                        </a>
+                      )}
+
+                      {showPhone && (
+                        <a
+                          href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
+                          onClick={() => storageService.incrementInquiries(job.id)}
+                          className={`w-full flex items-center justify-center gap-2 font-bold py-3 px-4 rounded-xl transition-colors ${
+                            !showEmail
+                              ? 'bg-teal-600 hover:bg-teal-700 text-white text-sm'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2.5'
+                          }`}
+                        >
+                          <PhoneCall className={`w-4 h-4 ${!showEmail ? 'text-white' : 'text-teal-400'}`} />
+                          <span>Call: {job.contactPhone}</span>
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
+                      Applications for this vacancy are closed because the deadline has passed.
+                    </div>
                   )}
 
-                  {job.contactPhone && (
-                    <a
-                      href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
-                      onClick={() => storageService.incrementInquiries(job.id)}
-                      className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors text-xs"
-                    >
-                      <PhoneCall className="w-4 h-4 text-teal-400" />
-                      <span>Call: {job.contactPhone}</span>
-                    </a>
-                  )}
-                </>
-              ) : (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
-                  Applications for this vacancy are closed because the deadline has passed.
-                </div>
-              )}
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                    {showEmail && (
+                      <p className="truncate">
+                        <strong className="text-slate-800">Email:</strong> {job.contactEmail}
+                      </p>
+                    )}
+                    {showPhone && (
+                      <p>
+                        <strong className="text-slate-800">Phone:</strong> {job.contactPhone}
+                      </p>
+                    )}
+                    <p>
+                      <strong className="text-slate-800">Vacancies:</strong> {job.vacanciesCount || 1}
+                    </p>
+                    <p>
+                      <strong className="text-slate-800">Reference ID:</strong> #{job.id}
+                    </p>
+                  </div>
 
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-                {job.contactEmail && (
-                  <p className="truncate">
-                    <strong className="text-slate-800">Email:</strong> {job.contactEmail}
-                  </p>
-                )}
-                {job.contactPhone && (
-                  <p>
-                    <strong className="text-slate-800">Phone:</strong> {job.contactPhone}
-                  </p>
-                )}
-                <p>
-                  <strong className="text-slate-800">Vacancies:</strong> {job.vacanciesCount || 1}
-                </p>
-                <p>
-                  <strong className="text-slate-800">Reference ID:</strong> #{job.id}
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span>Listing Status:</span>
-                  <span className={`font-bold capitalize ${isActiveListing ? 'text-emerald-700' : 'text-rose-700'}`}>
-                    {isActiveListing ? `Active (${diffDays}d left)` : 'Expired'}
-                  </span>
+                  <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span>Listing Status:</span>
+                      <span className={`font-bold capitalize ${isActiveListing ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {isActiveListing ? `Active (${diffDays}d left)` : 'Expired'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span>Deadline:</span>
+                      <span className="font-semibold text-slate-700">{deadlineFormatted}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span>Deadline:</span>
-                  <span className="font-semibold text-slate-700">{deadlineFormatted}</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Share Direct Link */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">

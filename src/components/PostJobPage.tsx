@@ -34,7 +34,8 @@ import {
   ExternalLink,
   PlusCircle,
   Loader2,
-  Mail
+  Mail,
+  PhoneCall
 } from 'lucide-react';
 
 interface PostJobPageProps {
@@ -142,29 +143,28 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
   const [employmentType, setEmploymentType] = useState<EmploymentType>('full-time');
   const [vacanciesCount, setVacanciesCount] = useState<string>('1');
 
-  // Section 2: Company Details
+  // Section 2: Company Details (Optional) & Section 3: Application Contact Details
   const [company, setCompany] = useState(currentUser?.companyName || '');
   const [contactPerson, setContactPerson] = useState(currentUser?.name || '');
+  const [contactMethod, setContactMethod] = useState<'email' | 'phone'>('email');
   const [contactEmail, setContactEmail] = useState(currentUser?.email || '');
-  const [contactPhone, setContactPhone] = useState(
-    currentUser?.phone || `${GCC_COUNTRIES[defaultCountry].phoneCode} `
-  );
+  const [contactPhone, setContactPhone] = useState(currentUser?.phone || '');
 
-  // Section 3: Job Location
+  // Section 4: Job Location
   const [country, setCountry] = useState<GccCountry>(defaultCountry);
   const [city, setCity] = useState(
     currentUser?.city || GCC_COUNTRIES[defaultCountry].topCities[0]
   );
   const [workMode, setWorkMode] = useState<'on-site' | 'remote' | 'hybrid'>('on-site');
 
-  // Section 4: Salary & Requirements
+  // Section 5: Salary & Requirements (Required Experience & Education are optional)
   const [monthlySalary, setMonthlySalary] = useState('');
   const [currency, setCurrency] = useState(GCC_COUNTRIES[defaultCountry].currencyCode);
-  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('1-3-years');
-  const [educationLevel, setEducationLevel] = useState("Bachelor's Degree");
-  const [skillsText, setSkillsText] = useState('');
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | ''>('');
+  const [educationLevel, setEducationLevel] = useState('');
 
-  // Section 5: Job Description
+  // Section 6: Job Details (Required Skills, Job Description, Key Responsibilities)
+  const [skillsText, setSkillsText] = useState('');
   const [description, setDescription] = useState('');
   const [responsibilitiesText, setResponsibilitiesText] = useState('');
   const howToApply: 'email' = 'email';
@@ -185,15 +185,16 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     setVacanciesCount('1');
     setCompany(currentUser?.companyName || '');
     setContactPerson(currentUser?.name || '');
+    setContactMethod('email');
     setContactEmail(currentUser?.email || '');
-    setContactPhone(currentUser?.phone || `${GCC_COUNTRIES[uCountry].phoneCode} `);
+    setContactPhone(currentUser?.phone || '');
     setCountry(uCountry);
     setCity(currentUser?.city || GCC_COUNTRIES[uCountry].topCities[0]);
     setWorkMode('on-site');
     setMonthlySalary('');
     setCurrency(GCC_COUNTRIES[uCountry].currencyCode);
-    setExperienceLevel('1-3-years');
-    setEducationLevel("Bachelor's Degree");
+    setExperienceLevel('');
+    setEducationLevel('');
     setSkillsText('');
     setDescription('');
     setResponsibilitiesText('');
@@ -229,6 +230,13 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       setVacanciesCount(String(editingJob.vacanciesCount || 1));
       setCompany(editingJob.company || '');
       setContactPerson(editingJob.contactPerson || '');
+      const inferredMethod: 'email' | 'phone' =
+        editingJob.contactMethod === 'phone' ||
+        (Boolean(editingJob.contactPhone && editingJob.contactPhone.trim()) &&
+          !String(editingJob.contactEmail || '').trim())
+          ? 'phone'
+          : 'email';
+      setContactMethod(inferredMethod);
       setContactEmail(editingJob.contactEmail || '');
       setContactPhone(editingJob.contactPhone || '');
       setCountry(editingJob.country || 'saudi-arabia');
@@ -236,8 +244,8 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       setWorkMode(editingJob.workMode || 'on-site');
       setMonthlySalary(formatInitialSalary(editingJob));
       setCurrency(editingJob.currency || GCC_COUNTRIES[editingJob.country || 'saudi-arabia'].currencyCode);
-      setExperienceLevel(editingJob.experienceLevel || '1-3-years');
-      setEducationLevel(editingJob.educationLevel || "Bachelor's Degree");
+      setExperienceLevel((editingJob.experienceLevel as ExperienceLevel | '') || '');
+      setEducationLevel(editingJob.educationLevel || '');
       const existingSkills =
         editingJob.skills && editingJob.skills.length > 0
           ? editingJob.skills.join(', ')
@@ -302,7 +310,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     setLinkErrorFields(new Set());
     setFieldErrors({});
 
-    // 1. Validate Required Fields
+    // 1. Validate Required Fields (Company Name, Contact Person, Required Experience, and Education are optional)
     const missingErrors: Record<string, string> = {};
     if (!title.trim() || title.trim().length < 2) {
       missingErrors.title = 'Please enter a valid Job Title.';
@@ -314,17 +322,14 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     if (!vacanciesCount.trim() || Number.isNaN(parsedVacancies) || parsedVacancies < 1) {
       missingErrors.vacanciesCount = 'Number of Vacancies must be at least 1.';
     }
-    if (!company.trim()) {
-      missingErrors.company = 'Company Name is required.';
-    }
-    if (!contactPerson.trim()) {
-      missingErrors.contactPerson = 'Contact Person is required.';
-    }
-    if (!contactEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
-      missingErrors.contactEmail = 'Please enter a valid Contact Email address.';
-    }
-    if (!contactPhone.trim() || contactPhone.replace(/\D/g, '').length < 6) {
-      missingErrors.contactPhone = 'Please enter a valid Contact Phone Number.';
+    if (contactMethod === 'email') {
+      if (!contactEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
+        missingErrors.contactEmail = 'Please enter a valid Contact Email address.';
+      }
+    } else {
+      if (!contactPhone.trim() || contactPhone.replace(/\D/g, '').length < 6) {
+        missingErrors.contactPhone = 'Please enter a valid Contact Phone Number.';
+      }
     }
     if (!city.trim()) {
       missingErrors.city = 'City is required.';
@@ -342,15 +347,17 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       missingErrors.responsibilities = 'Please provide Key Responsibilities.';
     }
 
-    // 2. Strict No External Links Check across EVERY field
+    // 2. Strict No External Links Check across active fields
+    const activeEmail = contactMethod === 'email' ? contactEmail : '';
+    const activePhone = contactMethod === 'phone' ? contactPhone : '';
     const linkCheck = validateJobFieldsForExternalLinks({
       title,
       category,
       subcategory,
       company,
       contactPerson,
-      contactEmail,
-      contactPhone,
+      contactEmail: activeEmail,
+      contactPhone: activePhone,
       city,
       monthlySalary,
       educationLevel,
@@ -384,7 +391,9 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       .filter(Boolean);
 
     const salaryParsed = parseMonthlySalaryInput(monthlySalary);
-    const cleanPhoneDigits = contactPhone.replace(/[^0-9+]/g, '');
+    const trimmedEmail = contactMethod === 'email' ? contactEmail.trim() : '';
+    const trimmedPhone = contactMethod === 'phone' ? contactPhone.trim() : '';
+    const cleanPhoneDigits = trimmedPhone ? trimmedPhone.replace(/[^0-9+]/g, '') : '';
 
     const payload = {
       title: title.trim(),
@@ -409,15 +418,16 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       requirements: parsedSkills.length > 0 ? parsedSkills : ['Relevant GCC experience preferred'],
       benefits: editingJob?.benefits || [],
       howToApply,
+      contactMethod,
       iqamaRequirement: editingJob?.iqamaRequirement || ('any' as const),
       drivingLicenseRequired: editingJob?.drivingLicenseRequired || false,
       genderPreference: editingJob?.genderPreference || ('any' as const),
       educationLevel: educationLevel.trim(),
       experienceLevel,
       contactPerson: contactPerson.trim(),
-      contactPhone: contactPhone.trim(),
+      contactPhone: trimmedPhone,
       contactWhatsapp: cleanPhoneDigits,
-      contactEmail: contactEmail.trim(),
+      contactEmail: trimmedEmail,
       isFeatured: editingJob?.isFeatured || false,
       isUrgent: editingJob?.isUrgent || false,
       packageType: editingJob?.packageType || ('standard' as const),
@@ -511,7 +521,8 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                 {publishedJob.title}
               </h1>
               <p className="text-sm text-slate-600">
-                {publishedJob.company} · {publishedJob.city}, {GCC_COUNTRIES[publishedJob.country]?.name} · Ref{' '}
+                {publishedJob.company ? `${publishedJob.company} · ` : ''}
+                {publishedJob.city}, {GCC_COUNTRIES[publishedJob.country]?.name} · Ref{' '}
                 <span className="font-mono font-semibold text-slate-800">{publishedJob.id}</span>
               </p>
             </div>
@@ -525,10 +536,10 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                 <strong>Status:</strong> Active on Gulfaro GCC Search (No admin approval delay)
               </p>
               <p>
-                <strong>Contact Channels:</strong> {publishedJob.contactEmail} · {publishedJob.contactPhone}
-              </p>
-              <p>
-                <strong>How to Apply:</strong> Direct Email &amp; Phone Contact
+                <strong>Contact Method:</strong>{' '}
+                {publishedJob.contactMethod === 'phone' || (!publishedJob.contactEmail && publishedJob.contactPhone)
+                  ? `Phone Number (${publishedJob.contactPhone})`
+                  : `Email (${publishedJob.contactEmail})`}
               </p>
             </div>
 
@@ -590,7 +601,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
             <p className="text-sm text-slate-600 mt-1">
               {editingJob
                 ? `Updating listing Ref #${editingJob.id}. All changes take effect immediately.`
-                : 'Complete all five sections below on this single page and publish your vacancy immediately across the GCC.'}
+                : 'Complete the sections below on this single page and publish your vacancy immediately across the GCC.'}
             </p>
           </div>
 
@@ -614,7 +625,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
               Gulfaro Direct-Contact Policy — No External Links Allowed
             </p>
             <p className="text-slate-300 leading-relaxed">
-              For candidate safety, website URLs, social media links, WhatsApp links, and external application links are strictly prohibited in any field. Provide your official <strong>contact email address</strong> and <strong>phone number</strong> only.
+              For candidate safety, website URLs, social media links, WhatsApp links, and external application links are strictly prohibited in any field. Provide your official <strong>contact email address</strong> or <strong>phone number</strong> only.
             </p>
           </div>
         </div>
@@ -633,9 +644,9 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
           </div>
         )}
 
-        {/* Single-Page 5-Section Vertical Form */}
+        {/* Single-Page Vertical Form */}
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
-          {/* SECTION 1: JOB DETAILS */}
+          {/* SECTION 1: JOB OVERVIEW */}
           <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
@@ -643,7 +654,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
               </span>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Section One – Job Details</span>
+                  <span>Job Overview</span>
                 </h2>
                 <p className="text-xs text-slate-500">
                   Core vacancy title, category, employment type, and openings
@@ -772,7 +783,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
             </div>
           </section>
 
-          {/* SECTION 2: COMPANY DETAILS */}
+          {/* SECTION 2: COMPANY DETAILS (OPTIONAL) */}
           <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
@@ -780,10 +791,10 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
               </span>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Section Two – Company Details</span>
+                  <span>Company Details</span>
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Employer identification and direct email & phone contact details
+                  Optional employer and contact person identification
                 </p>
               </div>
             </div>
@@ -791,12 +802,11 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
               <div>
                 <label htmlFor="company-name" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Company Name *
+                  Company Name (Optional)
                 </label>
                 <input
                   id="company-name"
                   type="text"
-                  required
                   value={company}
                   onChange={e => {
                     setCompany(e.target.value);
@@ -810,12 +820,11 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
               <div>
                 <label htmlFor="contact-person" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Contact Person *
+                  Contact Person (Optional)
                 </label>
                 <input
                   id="contact-person"
                   type="text"
-                  required
                   value={contactPerson}
                   onChange={e => {
                     setContactPerson(e.target.value);
@@ -826,48 +835,10 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                 />
                 {renderFieldError('contactPerson')}
               </div>
-
-              <div>
-                <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Contact Email *
-                </label>
-                <input
-                  id="contact-email"
-                  type="email"
-                  required
-                  value={contactEmail}
-                  onChange={e => {
-                    setContactEmail(e.target.value);
-                    clearFieldError('contactEmail');
-                  }}
-                  placeholder="admingulfaro@gmail.com"
-                  className={getInputClass('contactEmail')}
-                />
-                {renderFieldError('contactEmail')}
-              </div>
-
-              <div>
-                <label htmlFor="contact-phone" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Contact Phone Number *
-                </label>
-                <input
-                  id="contact-phone"
-                  type="tel"
-                  required
-                  value={contactPhone}
-                  onChange={e => {
-                    setContactPhone(e.target.value);
-                    clearFieldError('contactPhone');
-                  }}
-                  placeholder="+966 50 123 4567"
-                  className={getInputClass('contactPhone')}
-                />
-                {renderFieldError('contactPhone')}
-              </div>
             </div>
           </section>
 
-          {/* SECTION 3: JOB LOCATION */}
+          {/* SECTION 3: APPLICATION CONTACT DETAILS */}
           <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
@@ -875,7 +846,131 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
               </span>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Section Three – Job Location</span>
+                  <span>Application Contact Details</span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Select your preferred contact method for job seeker applications
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <span className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">
+                  Preferred Contact Method *
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Preferred Contact Method">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={contactMethod === 'email'}
+                    onClick={() => {
+                      setContactMethod('email');
+                      clearFieldError('contactPhone');
+                    }}
+                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                      contactMethod === 'email'
+                        ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        contactMethod === 'email'
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="block text-sm font-bold text-slate-900">Email</span>
+                      <span className="block text-xs text-slate-500">Receive CVs via email</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={contactMethod === 'phone'}
+                    onClick={() => {
+                      setContactMethod('phone');
+                      clearFieldError('contactEmail');
+                    }}
+                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                      contactMethod === 'phone'
+                        ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        contactMethod === 'phone'
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <PhoneCall className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="block text-sm font-bold text-slate-900">Phone Number</span>
+                      <span className="block text-xs text-slate-500">Receive direct phone calls</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {contactMethod === 'email' ? (
+                <div>
+                  <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                    Contact Email *
+                  </label>
+                  <input
+                    id="contact-email"
+                    type="email"
+                    required
+                    value={contactEmail}
+                    onChange={e => {
+                      setContactEmail(e.target.value);
+                      clearFieldError('contactEmail');
+                    }}
+                    placeholder="admingulfaro@gmail.com"
+                    className={getInputClass('contactEmail')}
+                  />
+                  {renderFieldError('contactEmail')}
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="contact-phone" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                    Contact Phone Number *
+                  </label>
+                  <input
+                    id="contact-phone"
+                    type="tel"
+                    required
+                    value={contactPhone}
+                    onChange={e => {
+                      setContactPhone(e.target.value);
+                      clearFieldError('contactPhone');
+                    }}
+                    placeholder="+966 50 123 4567"
+                    className={getInputClass('contactPhone')}
+                  />
+                  {renderFieldError('contactPhone')}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* SECTION 4: JOB LOCATION */}
+          <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
+                4
+              </span>
+              <div>
+                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <span>Job Location</span>
                 </h2>
                 <p className="text-xs text-slate-500">
                   Select the GCC country, city, and work arrangement
@@ -950,18 +1045,18 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
             </div>
           </section>
 
-          {/* SECTION 4: SALARY & REQUIREMENTS */}
+          {/* SECTION 5: SALARY & REQUIREMENTS */}
           <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
-                4
+                5
               </span>
               <div>
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Section Four – Salary & Requirements</span>
+                  <span>Salary & Requirements</span>
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Compensation package, experience level, education, and required skills
+                  Compensation package, optional experience, and education preferences
                 </p>
               </div>
             </div>
@@ -1007,15 +1102,15 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
               <div>
                 <label htmlFor="required-experience" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Required Experience *
+                  Required Experience (Optional)
                 </label>
                 <select
                   id="required-experience"
-                  required
                   value={experienceLevel}
-                  onChange={e => setExperienceLevel(e.target.value as ExperienceLevel)}
+                  onChange={e => setExperienceLevel(e.target.value as ExperienceLevel | '')}
                   className={getInputClass('experienceLevel')}
                 >
+                  <option value="">Optional — Select Required Experience</option>
                   {EXPERIENCE_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -1026,11 +1121,10 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
               <div>
                 <label htmlFor="education-level" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Education *
+                  Education (Optional)
                 </label>
                 <select
                   id="education-level"
-                  required
                   value={educationLevel}
                   onChange={e => {
                     setEducationLevel(e.target.value);
@@ -1038,6 +1132,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                   }}
                   className={getInputClass('educationLevel')}
                 >
+                  <option value="">Optional — Select Education</option>
                   {EDUCATION_OPTIONS.map(edu => (
                     <option key={edu} value={edu}>
                       {edu}
@@ -1046,8 +1141,27 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                 </select>
                 {renderFieldError('educationLevel')}
               </div>
+            </div>
+          </section>
 
-              <div className="md:col-span-2">
+          {/* SECTION 6: JOB DETAILS (Combined Required Skills, Job Description, Key Responsibilities) */}
+          <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
+                6
+              </span>
+              <div>
+                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <span>Job Details</span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Required skills, full role description, and key responsibilities
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
                 <label htmlFor="required-skills" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
                   Required Skills *
                 </label>
@@ -1065,26 +1179,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                 />
                 {renderFieldError('skills')}
               </div>
-            </div>
-          </section>
 
-          {/* SECTION 5: JOB DESCRIPTION */}
-          <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-              <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
-                5
-              </span>
-              <div>
-                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Section Five – Job Description</span>
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Full role overview, key responsibilities, and application method
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-5">
               <div>
                 <label htmlFor="job-description" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
                   Job Description *
@@ -1121,23 +1216,6 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                   className={getInputClass('responsibilities')}
                 />
                 {renderFieldError('responsibilities')}
-              </div>
-
-              <div>
-                <span className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">
-                  How to Apply *
-                </span>
-                <div className="p-4 rounded-xl border border-teal-600 bg-teal-50/70 ring-2 ring-teal-500/20 text-left flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm text-slate-900">Email &amp; Direct Phone Contact</p>
-                    <p className="text-xs text-slate-600 mt-0.5">
-                      Job seekers will contact you directly through your Contact Email ({contactEmail || 'Email'}) or Contact Phone Number ({contactPhone || 'Phone Number'}).
-                    </p>
-                  </div>
-                </div>
               </div>
             </div>
           </section>

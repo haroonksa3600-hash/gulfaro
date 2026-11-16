@@ -64,6 +64,8 @@ export const JobCard: React.FC<JobCardProps> = ({
 
   const isFeatured = job.packageType === 'sponsored' || job.isFeatured;
   const isEmployerVerified = storageService.isEmployerVerified(job);
+  const showEmailContact = Boolean(job.contactEmail) && job.contactMethod !== 'phone';
+  const showPhoneContact = Boolean(job.contactPhone) && job.contactMethod !== 'email';
 
   return (
     <article
@@ -127,29 +129,35 @@ export const JobCard: React.FC<JobCardProps> = ({
       </h3>
 
       {/* Company Name & Optional Verification */}
-      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-3 flex-wrap">
-        <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-        <span className="font-semibold text-slate-800">{job.company}</span>
-        {isEmployerVerified && (
-          <span
-            className="inline-flex items-center gap-1 text-emerald-700 font-semibold"
-            title="Corporate email validated on Gulfaro"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Verified Employer</span>
-          </span>
-        )}
-      </div>
+      {(job.company || isEmployerVerified) && (
+        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-3 flex-wrap">
+          <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          {job.company && <span className="font-semibold text-slate-800">{job.company}</span>}
+          {isEmployerVerified && (
+            <span
+              className="inline-flex items-center gap-1 text-emerald-700 font-semibold"
+              title="Corporate email validated on Gulfaro"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Verified Employer</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Clean Unboxed Metadata */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 mb-3">
         <span className="font-bold text-teal-700">{formatSalary()}</span>
         <span aria-hidden="true" className="text-slate-300">·</span>
-        <span className="capitalize">{job.employmentType.replace('-', ' ')}</span>
+        <span className="capitalize">{(job.employmentType || 'full-time').replace(/-/g, ' ')}</span>
         <span aria-hidden="true" className="text-slate-300">·</span>
         <span className="capitalize">{job.workMode || 'On-site'}</span>
-        <span aria-hidden="true" className="text-slate-300">·</span>
-        <span className="capitalize">{job.experienceLevel.replace('-', ' ')} Exp</span>
+        {job.experienceLevel && (
+          <>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <span className="capitalize">{job.experienceLevel.replace(/-/g, ' ')} Exp</span>
+          </>
+        )}
       </div>
 
       {/* Description Excerpt */}
@@ -173,7 +181,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         </div>
 
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          {job.contactEmail && (
+          {showEmailContact && (
             <a
               href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
               className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs px-2.5 py-1.5 rounded-lg transition-colors"
@@ -184,7 +192,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             </a>
           )}
 
-          {job.contactPhone && (
+          {showPhoneContact && (
             <a
               href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
               className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs px-2.5 py-1.5 rounded-lg transition-colors"

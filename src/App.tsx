@@ -241,7 +241,7 @@ export default function App() {
       const countryName = GCC_COUNTRIES[selectedJob.country]?.name || 'GCC';
       const active = isJobActiveAndUnexpired(selectedJob);
       applyRouteSeo({
-        title: `${selectedJob.title} – ${selectedJob.company} (${selectedJob.city}, ${countryName}) | Gulfaro`,
+        title: `${selectedJob.title}${selectedJob.company ? ` – ${selectedJob.company}` : ''} (${selectedJob.city}, ${countryName}) | Gulfaro`,
         description: (selectedJob.description || '').replace(/\s+/g, ' ').slice(0, 155),
         canonicalPath: `/job/${selectedJob.slug || selectedJob.id}`,
         robots: active ? 'index, follow' : 'noindex, follow',
@@ -390,10 +390,10 @@ export default function App() {
     return jobs.filter(j => {
       const matchId = j.userId === currentUser.id;
       const matchEmail = j.contactEmail && j.contactEmail.toLowerCase() === currentUser.email.toLowerCase();
-      const matchComp = currentUser.companyName && j.company.toLowerCase() === currentUser.companyName.toLowerCase();
+      const matchComp = currentUser.companyName && (j.company || '').toLowerCase() === currentUser.companyName.toLowerCase();
       if (matchId || matchEmail || matchComp) return true;
-      if (currentUser.id === 'user-emp-1' && j.company.includes('Al-Bawani')) return true;
-      if (currentUser.id === 'user-emp-2' && j.company.includes('FinGulf')) return true;
+      if (currentUser.id === 'user-emp-1' && (j.company || '').includes('Al-Bawani')) return true;
+      if (currentUser.id === 'user-emp-2' && (j.company || '').includes('FinGulf')) return true;
       return false;
     }).length;
   }, [jobs, currentUser]);
@@ -553,10 +553,10 @@ export default function App() {
 
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const inTitle = job.title.toLowerCase().includes(q);
-          const inDesc = job.description.toLowerCase().includes(q);
-          const inComp = job.company.toLowerCase().includes(q);
-          const inCity = job.city.toLowerCase().includes(q);
+          const inTitle = (job.title || '').toLowerCase().includes(q);
+          const inDesc = (job.description || '').toLowerCase().includes(q);
+          const inComp = (job.company || '').toLowerCase().includes(q);
+          const inCity = (job.city || '').toLowerCase().includes(q);
           const inCat = getJobCategoryName(job.category, { title: job.title, subcategory: job.subcategory }).toLowerCase().includes(q);
           const inSub = job.subcategory?.toLowerCase().includes(q) || false;
           const inReq = job.requirements?.some(r => r.toLowerCase().includes(q)) || false;

@@ -58,15 +58,16 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
       // Match by userId or company email / employer role
       const matchesUser = job.userId === currentUser.id;
       const matchesEmail = job.contactEmail && job.contactEmail.toLowerCase() === currentUser.email.toLowerCase();
-      const matchesCompany = currentUser.companyName && job.company.toLowerCase() === currentUser.companyName.toLowerCase();
+      const jobCompany = (job.company || '').toLowerCase();
+      const matchesCompany = currentUser.companyName && jobCompany === currentUser.companyName.toLowerCase();
       
       // If the current user is an employer with specific ID or email match
       if (matchesUser || matchesEmail) return true;
       if (currentUser.role === 'employer' && matchesCompany) return true;
 
       // Fallback for demo users (e.g. user-emp-1 owns Al-Bawani jobs, user-emp-2 owns FinGulf)
-      if (currentUser.id === 'user-emp-1' && job.company.includes('Al-Bawani')) return true;
-      if (currentUser.id === 'user-emp-2' && job.company.includes('FinGulf')) return true;
+      if (currentUser.id === 'user-emp-1' && (job.company || '').includes('Al-Bawani')) return true;
+      if (currentUser.id === 'user-emp-2' && (job.company || '').includes('FinGulf')) return true;
 
       return false;
     });
@@ -330,8 +331,12 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
                       </h3>
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="font-medium text-slate-700">{job.company}</span>
-                        <span>·</span>
+                        {job.company && (
+                          <>
+                            <span className="font-medium text-slate-700">{job.company}</span>
+                            <span>·</span>
+                          </>
+                        )}
                         <span className="capitalize">{job.employmentType}</span>
                         {job.vacanciesCount && job.vacanciesCount > 1 && (
                           <>

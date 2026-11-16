@@ -143,11 +143,12 @@ export interface JobAd {
   requirements: string[];
   benefits: string[];
   howToApply?: 'email';
+  contactMethod?: 'email' | 'phone';
   iqamaRequirement: IqamaStatus;
   drivingLicenseRequired: boolean;
   genderPreference: 'any' | 'male' | 'female';
   educationLevel: string;
-  experienceLevel: ExperienceLevel;
+  experienceLevel: ExperienceLevel | '';
   contactPerson: string;
   contactPhone: string;
   contactWhatsapp: string;
