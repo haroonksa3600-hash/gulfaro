@@ -374,66 +374,49 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
               </div>
             )}
 
-            {/* Full Job Description */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
-              <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                Job Description
-              </h2>
-              <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                {job.description}
-              </div>
-            </div>
+            {/* Position Details */}
+            {(() => {
+              const legacyResponsibilities = (job.responsibilities || []).map(r => r.trim()).filter(Boolean);
+              const legacySkillsAndReqs = Array.from(
+                new Set([
+                  ...(job.requirements || []).map(r => r.trim()).filter(r => r && r !== 'Relevant GCC experience preferred'),
+                  ...(job.skills || []).map(s => s.trim()).filter(Boolean)
+                ])
+              );
 
-            {/* Key Responsibilities */}
-            {job.responsibilities && job.responsibilities.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
-                <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Key Responsibilities
-                </h2>
-                <ul className="space-y-2 text-sm text-slate-700">
-                  {job.responsibilities.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+              return (
+                <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-4">
+                  <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
+                    Position Details
+                  </h2>
+                  <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                    {job.description}
+                  </div>
 
-            {/* Qualifications & Requirements */}
-            {job.requirements && job.requirements.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
-                <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Qualifications and Requirements
-                </h2>
-                <ul className="space-y-2 text-sm text-slate-700">
-                  {job.requirements.map((req, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
-                      <span>{req}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                  {legacyResponsibilities.length > 0 && (
+                    <ul className="space-y-2 text-sm text-slate-700 pt-2 border-t border-slate-100">
+                      {legacyResponsibilities.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
-            {/* Required Skills */}
-            {job.skills && job.skills.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-3">
-                <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Required Skills
-                </h2>
-                <ul className="space-y-2 text-sm text-slate-700">
-                  {job.skills.map((skill, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
-                      <span>{skill}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                  {legacySkillsAndReqs.length > 0 && (
+                    <ul className="space-y-2 text-sm text-slate-700 pt-2 border-t border-slate-100">
+                      {legacySkillsAndReqs.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-2 shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Benefits */}
             {job.benefits && job.benefits.length > 0 && (

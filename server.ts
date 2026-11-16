@@ -1021,7 +1021,7 @@ async function startServer() {
         });
       }
       if (!adData.description || String(adData.description).trim().length < 10) {
-        return res.status(400).json({ error: 'Job Description must be at least 10 characters.', invalidFields: ['description'] });
+        return res.status(400).json({ error: 'Position Details must be at least 10 characters.', invalidFields: ['description'] });
       }
 
       const rawEmail = String(adData.contactEmail || '').trim();
@@ -1162,7 +1162,7 @@ async function startServer() {
         return res.status(400).json({ error: 'Job Title is required.', invalidFields: ['title'] });
       }
       if (updates.description !== undefined && String(updates.description).trim().length < 10) {
-        return res.status(400).json({ error: 'Job Description must be at least 10 characters.', invalidFields: ['description'] });
+        return res.status(400).json({ error: 'Position Details must be at least 10 characters.', invalidFields: ['description'] });
       }
 
       if (updates.category !== undefined) {

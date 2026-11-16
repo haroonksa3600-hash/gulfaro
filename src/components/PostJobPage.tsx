@@ -125,6 +125,29 @@ function formatInitialSalary(job: JobAd): string {
   return '';
 }
 
+function buildInitialPositionDetails(job: JobAd): string {
+  const parts: string[] = [];
+  const baseDesc = (job.description || '').trim();
+  if (baseDesc) parts.push(baseDesc);
+
+  const responsibilities = (job.responsibilities || []).map(r => r.trim()).filter(Boolean);
+  if (responsibilities.length > 0 && !/key responsibilities:/i.test(baseDesc)) {
+    parts.push(`Key Responsibilities:\n${responsibilities.map(r => `• ${r}`).join('\n')}`);
+  }
+
+  const skills = (job.skills || []).map(s => s.trim()).filter(Boolean);
+  const requirements = (job.requirements || [])
+    .map(r => r.trim())
+    .filter(r => r && r !== 'Relevant GCC experience preferred');
+
+  const combinedQuals = Array.from(new Set([...requirements, ...skills]));
+  if (combinedQuals.length > 0 && !/required skills:|qualifications:/i.test(baseDesc)) {
+    parts.push(`Skills & Qualifications:\n${combinedQuals.map(q => `• ${q}`).join('\n')}`);
+  }
+
+  return parts.join('\n\n');
+}
+
 export const PostJobPage: React.FC<PostJobPageProps> = ({
   currentUser,
   editingJob,
@@ -163,10 +186,8 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | ''>('');
   const [educationLevel, setEducationLevel] = useState('');
 
-  // Section 6: Job Details (Required Skills, Job Description, Key Responsibilities)
-  const [skillsText, setSkillsText] = useState('');
-  const [description, setDescription] = useState('');
-  const [responsibilitiesText, setResponsibilitiesText] = useState('');
+  // Section 6: Job Details (Single combined Position Details field)
+  const [positionDetails, setPositionDetails] = useState('');
   const howToApply: 'email' = 'email';
 
   // Validation & Submission State
@@ -195,9 +216,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     setCurrency(GCC_COUNTRIES[uCountry].currencyCode);
     setExperienceLevel('');
     setEducationLevel('');
-    setSkillsText('');
-    setDescription('');
-    setResponsibilitiesText('');
+    setPositionDetails('');
     setSubmitError(null);
     setLinkErrorFields(new Set());
     setFieldErrors({});
@@ -246,13 +265,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       setCurrency(editingJob.currency || GCC_COUNTRIES[editingJob.country || 'saudi-arabia'].currencyCode);
       setExperienceLevel((editingJob.experienceLevel as ExperienceLevel | '') || '');
       setEducationLevel(editingJob.educationLevel || '');
-      const existingSkills =
-        editingJob.skills && editingJob.skills.length > 0
-          ? editingJob.skills.join(', ')
-          : (editingJob.requirements || []).join(', ');
-      setSkillsText(existingSkills);
-      setDescription(editingJob.description || '');
-      setResponsibilitiesText((editingJob.responsibilities || []).join('\n'));
+      setPositionDetails(buildInitialPositionDetails(editingJob));
     } else {
       resetFormToDefaults();
     }
@@ -337,14 +350,8 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     if (!monthlySalary.trim()) {
       missingErrors.monthlySalary = 'Monthly Salary is required (or enter Negotiable).';
     }
-    if (!skillsText.trim()) {
-      missingErrors.skills = 'Please list at least one Required Skill.';
-    }
-    if (!description.trim() || description.trim().length < 10) {
-      missingErrors.description = 'Please write a Job Description (at least 10 characters).';
-    }
-    if (!responsibilitiesText.trim()) {
-      missingErrors.responsibilities = 'Please provide Key Responsibilities.';
+    if (!positionDetails.trim() || positionDetails.trim().length < 10) {
+      missingErrors.description = 'Please enter Position Details (at least 10 characters).';
     }
 
     // 2. Strict No External Links Check across active fields
@@ -361,9 +368,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       city,
       monthlySalary,
       educationLevel,
-      skills: skillsText,
-      description,
-      responsibilities: responsibilitiesText
+      description: positionDetails
     });
 
     if (!linkCheck.valid) {
@@ -378,17 +383,6 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       setSubmitError('Please complete all required fields highlighted below before publishing.');
       return;
     }
-
-    // Parse lists and salary cleanly
-    const parsedSkills = skillsText
-      .split(/[\n,]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    const parsedResponsibilities = responsibilitiesText
-      .split('\n')
-      .map(r => r.replace(/^[•\-*]\s*/, '').trim())
-      .filter(Boolean);
 
     const salaryParsed = parseMonthlySalaryInput(monthlySalary);
     const trimmedEmail = contactMethod === 'email' ? contactEmail.trim() : '';
@@ -412,10 +406,10 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       salaryNegotiable: salaryParsed.salaryNegotiable,
       currency,
       salaryPeriod: 'monthly' as const,
-      description: description.trim(),
-      responsibilities: parsedResponsibilities,
-      skills: parsedSkills,
-      requirements: parsedSkills.length > 0 ? parsedSkills : ['Relevant GCC experience preferred'],
+      description: positionDetails.trim(),
+      responsibilities: [],
+      skills: [],
+      requirements: [],
       benefits: editingJob?.benefits || [],
       howToApply,
       contactMethod,
@@ -1144,7 +1138,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
             </div>
           </section>
 
-          {/* SECTION 6: JOB DETAILS (Combined Required Skills, Job Description, Key Responsibilities) */}
+          {/* SECTION 6: JOB DETAILS (Single combined Position Details field) */}
           <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-2xs space-y-5">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <span className="w-8 h-8 rounded-lg bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
@@ -1155,68 +1149,28 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                   <span>Job Details</span>
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Required skills, full role description, and key responsibilities
+                  Provide complete position details, required skills, qualifications, and responsibilities
                 </p>
               </div>
             </div>
 
-            <div className="space-y-5">
-              <div>
-                <label htmlFor="required-skills" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Required Skills *
-                </label>
-                <textarea
-                  id="required-skills"
-                  rows={3}
-                  required
-                  value={skillsText}
-                  onChange={e => {
-                    setSkillsText(e.target.value);
-                    clearFieldError('skills');
-                  }}
-                  placeholder="e.g. AutoCAD, Structural Design, QA/QC Inspection, Team Leadership (comma or new line separated)"
-                  className={getInputClass('skills')}
-                />
-                {renderFieldError('skills')}
-              </div>
-
-              <div>
-                <label htmlFor="job-description" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Job Description *
-                </label>
-                <textarea
-                  id="job-description"
-                  rows={5}
-                  required
-                  value={description}
-                  onChange={e => {
-                    setDescription(e.target.value);
-                    clearFieldError('description');
-                  }}
-                  placeholder="Describe the role, project scope, work environment, and candidate expectations..."
-                  className={getInputClass('description')}
-                />
-                {renderFieldError('description')}
-              </div>
-
-              <div>
-                <label htmlFor="key-responsibilities" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  Key Responsibilities *
-                </label>
-                <textarea
-                  id="key-responsibilities"
-                  rows={4}
-                  required
-                  value={responsibilitiesText}
-                  onChange={e => {
-                    setResponsibilitiesText(e.target.value);
-                    clearFieldError('responsibilities');
-                  }}
-                  placeholder={"Supervise daily site operations and quality checks\nCoordinate with project engineers and safety officers\nPrepare weekly progress reports"}
-                  className={getInputClass('responsibilities')}
-                />
-                {renderFieldError('responsibilities')}
-              </div>
+            <div>
+              <label htmlFor="position-details" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                Position Details *
+              </label>
+              <textarea
+                id="position-details"
+                rows={8}
+                required
+                value={positionDetails}
+                onChange={e => {
+                  setPositionDetails(e.target.value);
+                  clearFieldError('description');
+                }}
+                placeholder="Describe the position, required skills, qualifications, job duties, key responsibilities, and project scope..."
+                className={getInputClass('description')}
+              />
+              {renderFieldError('description')}
             </div>
           </section>
 
