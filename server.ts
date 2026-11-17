@@ -1423,7 +1423,7 @@ async function startServer() {
     if (/localhost|127\.0\.0\.1|ais-dev-|webcontainer|onrender\.com/i.test(raw)) {
       return 'https://www.gulfaro.net';
     }
-    if (/^https?:\/\/gulfaro\.net$/i.test(raw)) {
+    if (/^https?:\/\/(www\.)?gulfaro\.net$/i.test(raw)) {
       return 'https://www.gulfaro.net';
     }
     return raw;
@@ -1605,10 +1605,26 @@ async function startServer() {
     res.status(200).type('text/plain').send(robotsTxt);
   });
 
-  // Dynamic XML Sitemap excluding expired/hidden jobs & private pages
-  app.get('/sitemap.xml', async (req: Request, res: Response) => {
+  function formatSitemapLastmod(primary?: string, secondary?: string, fallback?: string): string {
+    const candidates = [primary, secondary];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const ms = Date.parse(candidate);
+      if (!Number.isNaN(ms)) {
+        return new Date(ms).toISOString().split('T')[0];
+      }
+    }
+    return fallback || new Date().toISOString().split('T')[0];
+  }
+
+  // Dynamic XML Sitemap excluding expired/hidden/deleted jobs & private/admin pages
+  app.get(['/sitemap.xml', '/api/sitemap.xml'], async (req: Request, res: Response) => {
     try {
-      const baseUrl = getCanonicalBaseOrigin(req);
+      const resolvedOrigin = getCanonicalBaseOrigin(req);
+      const baseUrl =
+        /^https?:\/\/(www\.)?gulfaro\.net$/i.test(resolvedOrigin) || /run\.app/i.test(resolvedOrigin)
+          ? 'https://www.gulfaro.net'
+          : resolvedOrigin;
       const nowMs = Date.now();
       const today = new Date().toISOString().split('T')[0];
       const [allJobs, settings] = await Promise.all([getJobs(), getSiteSettings()]);
@@ -1647,16 +1663,30 @@ async function startServer() {
       const publicJobs =
         settings.emergency.hideAllPublicJobs || settings.emergency.emergencyShutdown
           ? []
-          : allJobs.filter(job => isJobActiveAndUnexpired(job as any, nowMs));
+          : allJobs
+              .filter(job => isJobActiveAndUnexpired(job as any, nowMs))
+              .sort((a, b) => {
+                const aMs = Date.parse(a.updatedAt || a.postedAt || '') || 0;
+                const bMs = Date.parse(b.updatedAt || b.postedAt || '') || 0;
+                return bMs - aMs;
+              });
 
       const jobEntries = publicJobs.map(job => ({
         path: `/job/${encodeURIComponent(job.slug || job.id)}`,
         priority: '0.8',
         changefreq: 'daily',
-        lastmod: (job.postedAt || today).split('T')[0]
+        lastmod: formatSitemapLastmod(job.updatedAt, job.postedAt, today)
       }));
 
-      const xmlItems = [...staticEntries, ...jobEntries]
+      const seenLocs = new Set<string>();
+      const uniqueEntries = [...staticEntries, ...jobEntries].filter(entry => {
+        const loc = `${baseUrl}${entry.path}`;
+        if (seenLocs.has(loc)) return false;
+        seenLocs.add(loc);
+        return true;
+      });
+
+      const xmlItems = uniqueEntries
         .map(
           entry => `  <url>
     <loc>${escapeXml(`${baseUrl}${entry.path}`)}</loc>
@@ -1672,7 +1702,13 @@ async function startServer() {
 ${xmlItems}
 </urlset>`;
 
-      res.status(200).set({ 'Content-Type': 'application/xml; charset=utf-8' }).send(xml);
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Cache-Control': 'no-cache, must-revalidate'
+        })
+        .send(xml);
     } catch (err) {
       console.error('Error generating /sitemap.xml:', err);
       res.status(500).type('text/plain').send('Failed to generate sitemap');

@@ -11,19 +11,22 @@
   RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
   RewriteRule ^(.*)$ https://www.gulfaro.net/$1 [R=301,L]
 
-  # 2. Never rewrite backend API endpoints to frontend HTML
+  # 2. Serve dynamic XML sitemap directly at /sitemap.xml (HTTP 200, application/xml) before SPA fallback
+  RewriteRule ^sitemap\.xml$ sitemap.php [L]
+
+  # 3. Never rewrite backend API endpoints to frontend HTML
   RewriteRule ^api(/.*)?$ - [L]
 
-  # 3. Serve dynamic OpenGraph / WhatsApp / Facebook metadata for individual job links
+  # 4. Serve dynamic OpenGraph / WhatsApp / Facebook metadata for individual job links
   RewriteCond %{HTTP_USER_AGENT} (WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|TelegramBot|Slackbot|Discordbot|Pinterest) [NC]
   RewriteRule ^jobs?/([^/]+)/?$ https://gulfaro.onrender.com/share/job/$1 [R=302,L]
 
-  # 4. Serve existing physical files and directories normally (JS, CSS, images, icons, config)
+  # 5. Serve existing physical files and directories normally (JS, CSS, images, icons, config, robots.txt)
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # 5. SPA fallback: route all valid frontend URLs (/job/SLUG, /country/..., /category/..., etc.) to index.html
+  # 6. SPA fallback: route all valid frontend URLs (/job/SLUG, /country/..., /category/..., etc.) to index.html
   RewriteRule ^ index.html [L]
 </IfModule>
 
