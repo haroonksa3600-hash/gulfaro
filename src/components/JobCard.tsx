@@ -136,7 +136,7 @@ export const JobCard: React.FC<JobCardProps> = ({
           {isEmployerVerified && (
             <span
               className="inline-flex items-center gap-1 text-emerald-700 font-semibold"
-              title="Corporate email validated on Gulfaro"
+              title="Registered Gulfaro Employer"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span>Verified Employer</span>

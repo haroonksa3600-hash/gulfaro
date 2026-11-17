@@ -265,12 +265,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
-  // Instant Demo Login (for easy testing)
-  const handleFastDemoLogin = (demoRole: 'job_seeker' | 'employer') => {
-    const user = storageService.switchDemoUser(demoRole);
-    setSuccessMsg(`Logged in as ${user.name} (${user.role === 'employer' ? 'Employer' : 'Job Seeker'})`);
+  // Demo Login (authenticates with server via /api/auth/login for valid JWT)
+  const handleFastDemoLogin = async (demoRole: 'job_seeker' | 'employer') => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
+    const demoEmail =
+      demoRole === 'employer'
+        ? 'talent@fingulf-tech.example.com'
+        : 'zaid.almansoor@example.com';
+    const res = await storageService.loginUserAsync(demoEmail, 'password123', true);
+    setIsSubmitting(false);
+    if (!res.success || !res.user) {
+      setErrorMsg(res.error || 'Demo sign in failed.');
+      return;
+    }
+    setSuccessMsg(`Logged in as ${res.user.name} (${res.user.role === 'employer' ? 'Employer' : 'Job Seeker'})`);
     setTimeout(() => {
-      onAuthSuccess(user);
+      onAuthSuccess(res.user!);
     }, 300);
   };
 

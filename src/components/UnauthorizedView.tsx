@@ -52,8 +52,8 @@ export const UnauthorizedView: React.FC<UnauthorizedViewProps> = ({
               onClick={onSwitchToEmployer}
               className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
             >
-              <Building className="w-4 h-4" />
-              <span>Switch to Employer Account</span>
+              <LogIn className="w-4 h-4" />
+              <span>Sign Out &amp; Sign In as Employer</span>
             </button>
           )}
 

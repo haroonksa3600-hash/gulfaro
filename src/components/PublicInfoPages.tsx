@@ -424,7 +424,7 @@ export const PublicInfoPages: React.FC<PublicInfoPagesProps> = ({
               <section className="space-y-2">
                 <h2 className="text-lg font-bold text-slate-900">2. Verification of Employers & Vacancies</h2>
                 <p>
-                  While Gulfaro enforces anti-spam validation, strict no-external-links rules, and corporate email checks for verified accounts, individual job postings are submitted by third-party employers. Candidates are responsible for independently verifying company Commercial Registration (CR) or Trade Licenses and reviewing official contracts through national labor portals (such as Qiwa, MOHRE, MOL, PAM, or LMRA) before accepting offers or relocating.
+                  While Gulfaro enforces anti-spam validation, strict no-external-links rules, and registered employer account verification, individual job postings are submitted by third-party employers. Candidates are responsible for independently verifying company Commercial Registration (CR) or Trade Licenses and reviewing official contracts through national labor portals (such as Qiwa, MOHRE, MOL, PAM, or LMRA) before accepting offers or relocating.
                 </p>
               </section>
 

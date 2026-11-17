@@ -387,15 +387,7 @@ export default function App() {
 
   const employerJobCount = useMemo(() => {
     if (!currentUser || currentUser.role !== 'employer') return 0;
-    return jobs.filter(j => {
-      const matchId = j.userId === currentUser.id;
-      const matchEmail = j.contactEmail && j.contactEmail.toLowerCase() === currentUser.email.toLowerCase();
-      const matchComp = currentUser.companyName && (j.company || '').toLowerCase() === currentUser.companyName.toLowerCase();
-      if (matchId || matchEmail || matchComp) return true;
-      if (currentUser.id === 'user-emp-1' && (j.company || '').includes('Al-Bawani')) return true;
-      if (currentUser.id === 'user-emp-2' && (j.company || '').includes('FinGulf')) return true;
-      return false;
-    }).length;
+    return jobs.filter(j => Boolean(j.userId) && j.userId === currentUser.id).length;
   }, [jobs, currentUser]);
 
   const handleOpenPostJob = () => {
@@ -410,7 +402,11 @@ export default function App() {
   };
 
   const handleEditJob = (job: JobAd) => {
-    if (currentUser?.role !== 'employer') {
+    const isOwner =
+      currentUser?.role === 'employer' &&
+      Boolean(job.userId) &&
+      job.userId === currentUser.id;
+    if (!isOwner && currentUser?.role !== 'admin') {
       navigateTo('/unauthorized');
       return;
     }
@@ -420,24 +416,24 @@ export default function App() {
     navigateTo('/post-job');
   };
 
-  const handleDeleteJob = async (jobId: string) => {
-    await storageService.deleteJobAsync(jobId);
-    reloadJobs();
+  const handleDeleteJob = async (jobId: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await storageService.deleteJobAsync(jobId);
+    if (res.success) {
+      reloadJobs();
+    }
+    return res;
   };
 
   const handleJobCreated = () => reloadJobs();
   const handleJobUpdated = () => reloadJobs();
 
-  const handleSwitchUserRole = (role: 'job_seeker' | 'employer') => {
-    const user = storageService.switchDemoUser(role);
-    setCurrentUser(user);
-    if (role === 'employer') {
-      setActiveTab('my-jobs');
-      navigateTo('/my-job-posts');
-    } else {
-      setActiveTab('jobs');
-      navigateTo('/');
-    }
+  const handleSignOutAndOpenEmployerAuth = () => {
+    storageService.logoutUser();
+    setCurrentUser(null);
+    setEditingJob(null);
+    setAuthMode('login');
+    setActiveTab('auth');
+    navigateTo('/');
   };
 
   const handleOpenAuth = (mode: 'login' | 'signup') => {
@@ -456,6 +452,8 @@ export default function App() {
     setCurrentUser(user);
     if (user.role === 'employer') {
       setActiveTab('my-jobs');
+      navigateTo('/my-job-posts');
+      storageService.fetchEmployerJobsAsync().then(() => reloadJobs()).catch(() => {});
     } else {
       setActiveTab('dashboard');
     }
@@ -694,7 +692,7 @@ export default function App() {
           currentUser={currentUser}
           onNavigateHome={() => navigateTo('/')}
           onOpenAuth={handleOpenAuth}
-          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+          onSwitchToEmployer={handleSignOutAndOpenEmployerAuth}
         />
       );
     }
@@ -726,7 +724,7 @@ export default function App() {
           currentUser={currentUser}
           onNavigateHome={() => navigateTo('/')}
           onOpenAuth={handleOpenAuth}
-          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+          onSwitchToEmployer={handleSignOutAndOpenEmployerAuth}
         />
       );
     }
@@ -747,7 +745,7 @@ export default function App() {
           currentUser={currentUser}
           onNavigateHome={() => navigateTo('/')}
           onOpenAuth={handleOpenAuth}
-          onSwitchToEmployer={() => handleSwitchUserRole('employer')}
+          onSwitchToEmployer={handleSignOutAndOpenEmployerAuth}
         />
       );
     }
@@ -811,12 +809,23 @@ export default function App() {
     }
 
     if (activeTab === 'dashboard') {
+      if (currentUser?.role === 'employer') {
+        return (
+          <ManageJobsView
+            currentUser={currentUser}
+            jobs={jobs}
+            onEditJob={handleEditJob}
+            onDeleteJob={handleDeleteJob}
+            onOpenPostJob={handleOpenPostJob}
+            onSelectJob={handleSelectJob}
+            onNavigateHome={() => navigateTo('/')}
+          />
+        );
+      }
       return (
         <UserDashboard
           currentUser={currentUser}
-          onOpenPostJob={handleOpenPostJob}
           onSelectJob={handleSelectJob}
-          onEditJob={handleEditJob}
           onOpenAuth={handleOpenAuth}
         />
       );

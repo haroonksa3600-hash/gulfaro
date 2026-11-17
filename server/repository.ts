@@ -816,13 +816,13 @@ export async function deleteJobById(id: string): Promise<boolean> {
   return (res.rowCount || 0) > 0;
 }
 
-export async function syncEmployerVerifiedOnJobs(userId: string, email: string, verified: boolean): Promise<number> {
-  const cleanEmail = email.trim().toLowerCase();
+export async function syncEmployerVerifiedOnJobs(userId: string, _email: string, verified: boolean): Promise<number> {
+  if (!userId) return 0;
   if (!isPostgresEnabled()) {
     const jobs = readJobsJson();
     let count = 0;
     const updated = jobs.map(j => {
-      if (j.userId === userId || (j.contactEmail && j.contactEmail.toLowerCase() === cleanEmail)) {
+      if (j.userId === userId) {
         count++;
         return { ...j, isEmployerVerified: verified };
       }
@@ -834,10 +834,81 @@ export async function syncEmployerVerifiedOnJobs(userId: string, email: string, 
   const res = await dbQuery(
     `UPDATE public.jobs
      SET is_employer_verified = $1, updated_at = NOW()
-     WHERE user_id = $2 OR LOWER(contact_email) = $3`,
-    [verified, userId, cleanEmail]
+     WHERE user_id = $2`,
+    [verified, userId]
   );
   return res.rowCount || 0;
+}
+
+/**
+ * Idempotent migration/backfill:
+ * - Marks all existing employer accounts as Verified Employer (emailVerified: true)
+ *   without changing job_seeker accounts or reassigning any job.userId.
+ * - Ensures jobs linked via userId to an employer/admin carry isEmployerVerified: true.
+ */
+export async function ensureExistingEmployersVerifiedBackfill(): Promise<{
+  employersUpdated: number;
+  jobsUpdated: number;
+}> {
+  if (!isPostgresEnabled()) {
+    const users = readUsersJson();
+    const nowIso = new Date().toISOString();
+    let employersUpdated = 0;
+    const nextUsers = users.map(u => {
+      if (u.role === 'employer' && !u.emailVerified) {
+        employersUpdated++;
+        return {
+          ...u,
+          emailVerified: true,
+          emailVerifiedAt: u.emailVerifiedAt || u.createdAt || nowIso
+        };
+      }
+      return u;
+    });
+    if (employersUpdated > 0) {
+      writeUsersJson(nextUsers);
+    }
+
+    const verifiedOwnerIds = new Set(
+      nextUsers
+        .filter(u => u.role === 'employer' || u.role === 'admin')
+        .map(u => u.id)
+    );
+    const jobs = readJobsJson();
+    let jobsUpdated = 0;
+    const nextJobs = jobs.map(j => {
+      if (j.userId && verifiedOwnerIds.has(j.userId) && !j.isEmployerVerified) {
+        jobsUpdated++;
+        return { ...j, isEmployerVerified: true };
+      }
+      return j;
+    });
+    if (jobsUpdated > 0) {
+      writeJobsJson(nextJobs);
+    }
+    return { employersUpdated, jobsUpdated };
+  }
+
+  const usersRes = await dbQuery(
+    `UPDATE public.users
+     SET email_verified = TRUE,
+         email_verified_at = COALESCE(email_verified_at, created_at, NOW()),
+         updated_at = NOW()
+     WHERE role = 'employer' AND email_verified IS DISTINCT FROM TRUE`
+  );
+  const jobsRes = await dbQuery(
+    `UPDATE public.jobs AS j
+     SET is_employer_verified = TRUE,
+         updated_at = NOW()
+     FROM public.users AS u
+     WHERE j.user_id = u.id
+       AND u.role IN ('employer', 'admin')
+       AND j.is_employer_verified IS DISTINCT FROM TRUE`
+  );
+  return {
+    employersUpdated: usersRes.rowCount || 0,
+    jobsUpdated: jobsRes.rowCount || 0
+  };
 }
 
 // --- Verification Codes & Reset Tokens ---

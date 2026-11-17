@@ -432,7 +432,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
       {
         id: 'faq-3',
         question: 'How does Verified Employer status work?',
-        answer: 'Employers can verify their corporate email in the Employer Portal or be marked Verified by Gulfaro Administration to display the Verified Employer trust badge.'
+        answer: 'All registered employer accounts on Gulfaro automatically receive the Verified Employer trust badge on their published job listings.'
       }
     ],
     termsContent: 'Employers and agencies are strictly prohibited from demanding recruitment fees, visa charges, or interview processing payments from candidates. All listings must reflect genuine vacancies.',

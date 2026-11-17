@@ -219,21 +219,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
                     )}
 
-                    <button
-                      onClick={() => {
-                        setShowUserMenu(false);
-                        onNavigateTab('dashboard');
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs hover:bg-slate-800 flex items-center justify-between"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Building className="w-4 h-4 text-slate-400" />
-                        {currentUser.role === 'employer' ? 'Employer Portal' : 'Saved Jobs & Profile'}
-                      </span>
-                      {currentUser.role === 'job_seeker' && savedCount > 0 && (
-                        <span className="text-xs font-mono text-teal-400">{savedCount}</span>
-                      )}
-                    </button>
+                    {currentUser.role === 'job_seeker' && (
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onNavigateTab('dashboard');
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs hover:bg-slate-800 flex items-center justify-between"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Building className="w-4 h-4 text-slate-400" />
+                          Saved Jobs & Profile
+                        </span>
+                        {savedCount > 0 && (
+                          <span className="text-xs font-mono text-teal-400">{savedCount}</span>
+                        )}
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
@@ -399,19 +401,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronRight className="w-4 h-4 text-slate-500" />
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    onNavigateTab('dashboard');
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-200 hover:bg-slate-900"
-                >
-                  <span className="flex items-center gap-3">
-                    <UserCheck className="w-4 h-4 text-teal-400" />
-                    {currentUser.role === 'employer' ? 'Employer Portal' : 'My Dashboard'}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
-                </button>
+                {currentUser.role === 'job_seeker' && (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onNavigateTab('dashboard');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-200 hover:bg-slate-900"
+                  >
+                    <span className="flex items-center gap-3">
+                      <UserCheck className="w-4 h-4 text-teal-400" />
+                      My Dashboard
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-500" />
+                  </button>
+                )}
               </>
             )}
 

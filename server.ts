@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,14 +15,14 @@ import {
   sendRealPasswordResetEmail,
   verifyResetTokenRecord,
   completePasswordReset,
-  sendEmployerEmailVerification,
-  verifyEmployerEmailRecord,
   phonesMatch,
   cleanPhone,
   hashAccessKey,
   verifyAccessKeyAndGenerateToken,
   resetPasswordWithJwt,
   sendPlatformEmail,
+  issueUserSessionToken,
+  verifyUserSessionToken,
   UserRecord
 } from './server/authService';
 import { initializeSuperAdminStores } from './server/superAdminStore';
@@ -30,8 +31,11 @@ import {
   appendSystemErrorEntry,
   createUserTransactional,
   deleteJobById,
+  ensureExistingEmployersVerifiedBackfill,
   findUserByEmail,
   findUserById,
+  getAdmins,
+  getAdminSessions,
   getApplications,
   getJobs,
   getMarketplaceConfig,
@@ -158,6 +162,9 @@ function isAllowedCorsOrigin(origin: string): boolean {
 
 async function startServer() {
   initializeSuperAdminStores();
+  await ensureExistingEmployersVerifiedBackfill().catch(err => {
+    console.warn('[Gulfaro Startup Backfill] Failed to backfill employer verification:', err?.message || err);
+  });
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -420,59 +427,139 @@ async function startServer() {
     }
   });
 
-  // Send Employer Corporate Email Verification
-  app.post('/api/auth/send-employer-verification', async (req: Request, res: Response) => {
-    try {
-      const { email } = req.body;
-      if (!email || typeof email !== 'string' || !email.includes('@')) {
-        return res.status(400).json({ error: 'Valid corporate email address is required.' });
-      }
-
-      const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-      const appUrl = getAppBaseUrl(req);
-
-      const result = await sendEmployerEmailVerification(email, appUrl, clientIp);
-      if (result.success) {
-        res.json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (err: any) {
-      console.error('Error in /api/auth/send-employer-verification:', err);
-      res.status(500).json({ error: 'Failed to dispatch verification email. Please try again.' });
-    }
+  // Employer Email Verification is removed (registered employers receive automatic Verified Employer badge)
+  app.post('/api/auth/send-employer-verification', (_req: Request, res: Response) => {
+    return res.status(410).json({
+      success: false,
+      error: 'Employer email verification has been removed. All registered employer accounts automatically receive the Verified Employer badge.'
+    });
   });
 
-  // Complete Employer Corporate Email Verification
-  app.post('/api/auth/verify-employer-email', async (req: Request, res: Response) => {
-    try {
-      const { email, code } = req.body;
-      if (!email || !code) {
-        return res.status(400).json({ error: 'Email and 6-digit code or link are required.' });
-      }
+  app.post('/api/auth/verify-employer-email', (_req: Request, res: Response) => {
+    return res.status(410).json({
+      success: false,
+      error: 'Employer email verification has been removed. All registered employer accounts automatically receive the Verified Employer badge.'
+    });
+  });
 
-      const result = await verifyEmployerEmailRecord(email, code);
-      if (result.success) {
-        const safeUser = result.user ? { ...result.user } : undefined;
-        if (safeUser) {
-          delete safeUser.password;
-          delete safeUser.passwordHash;
-          delete safeUser.accessKeyHash;
+  const USER_SESSION_COOKIE = 'gulfaro_user_token';
+
+  function parseCookies(req: Request): Record<string, string> {
+    const raw = req.headers.cookie;
+    if (!raw || typeof raw !== 'string') return {};
+    const out: Record<string, string> = {};
+    for (const part of raw.split(';')) {
+      const idx = part.indexOf('=');
+      if (idx === -1) continue;
+      const key = part.slice(0, idx).trim();
+      const val = part.slice(idx + 1).trim();
+      if (key) {
+        try {
+          out[key] = decodeURIComponent(val);
+        } catch {
+          out[key] = val;
         }
-        res.json({
-          success: true,
-          message: 'Employer corporate email verified successfully! Your job postings now show the Verified Employer badge.',
-          user: safeUser,
-          updatedJobsCount: result.updatedJobsCount
-        });
-      } else {
-        res.status(400).json({ error: result.error });
       }
-    } catch (err: any) {
-      console.error('Error in /api/auth/verify-employer-email:', err);
-      res.status(500).json({ error: 'Failed to process email verification.' });
     }
-  });
+    return out;
+  }
+
+  function sanitizeUser(u: UserRecord) {
+    const copy: any = { ...u };
+    delete copy.password;
+    delete copy.passwordHash;
+    delete copy.accessKeyHash;
+    if (copy.role === 'employer') {
+      copy.emailVerified = true;
+      copy.emailVerifiedAt = copy.emailVerifiedAt || copy.createdAt;
+    }
+    return copy;
+  }
+
+  function setUserSessionCookie(req: Request, res: Response, token: string, rememberMe = false) {
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
+    res.cookie(USER_SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: Boolean(isHttps),
+      sameSite: isHttps ? 'none' : 'lax',
+      maxAge: (rememberMe ? 30 : 1) * 24 * 60 * 60 * 1000,
+      path: '/'
+    });
+  }
+
+  function clearUserSessionCookie(req: Request, res: Response) {
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
+    res.clearCookie(USER_SESSION_COOKIE, {
+      httpOnly: true,
+      secure: Boolean(isHttps),
+      sameSite: isHttps ? 'none' : 'lax',
+      path: '/'
+    });
+  }
+
+  interface AuthenticatedActor {
+    isAdmin: boolean;
+    id: string;
+    email: string;
+    user?: UserRecord;
+  }
+
+  async function resolveAuthenticatedActor(req: Request): Promise<AuthenticatedActor | null> {
+    const cookies = parseCookies(req);
+    const authHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+    const bearerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+
+    // 1. Check signed marketplace user JWT (Bearer or HttpOnly cookie)
+    const userToken = bearerToken || cookies[USER_SESSION_COOKIE] || '';
+    if (userToken) {
+      const verified = verifyUserSessionToken(userToken);
+      if (verified.valid && verified.userId) {
+        const user = await findUserById(verified.userId);
+        if (user && (user.status || 'active') === 'active') {
+          if (!user.forceLogoutBefore || (verified.iatMs ?? 0) >= user.forceLogoutBefore) {
+            return {
+              isAdmin: user.role === 'admin',
+              id: user.id,
+              email: user.email,
+              user
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Check active Super Admin session (Bearer or HttpOnly cookie gulfaro_sa_session)
+    const saToken = bearerToken || cookies['gulfaro_sa_session'] || '';
+    if (saToken) {
+      const tokenHash = crypto.createHash('sha256').update(saToken).digest('hex');
+      const [sessions, admins, settings] = await Promise.all([
+        getAdminSessions(),
+        getAdmins(),
+        getSiteSettings()
+      ]);
+      const now = Date.now();
+      const inactivityTimeoutMs = Math.max(5, settings.registration.adminSessionTimeoutMinutes || 15) * 60 * 1000;
+      const session = sessions.find(
+        s =>
+          s.tokenHash === tokenHash &&
+          !s.revoked &&
+          now <= s.expiresAt &&
+          now - s.lastActivityAt <= inactivityTimeoutMs
+      );
+      if (session) {
+        const admin = admins.find(a => a.id === session.adminId && a.status === 'active');
+        if (admin) {
+          return {
+            isAdmin: true,
+            id: admin.id,
+            email: admin.email
+          };
+        }
+      }
+    }
+
+    return null;
+  }
 
   // In-process serialized queue to prevent simultaneous duplicate registrations in JSON mode
   let registrationQueue: Promise<any> = Promise.resolve();
@@ -576,6 +663,10 @@ async function startServer() {
         user.passwordHash = hashPassword(password);
         user.password = undefined;
       }
+      if (user.role === 'employer' && !user.emailVerified) {
+        user.emailVerified = true;
+        user.emailVerifiedAt = user.emailVerifiedAt || user.createdAt || new Date().toISOString();
+      }
       user.loginFailedAttempts = 0;
       user.loginLockoutUntil = null;
       user.lastLoginAt = new Date().toISOString();
@@ -593,12 +684,11 @@ async function startServer() {
         suspicious: false
       });
 
-      const sanitized = { ...user };
-      delete sanitized.password;
-      delete sanitized.passwordHash;
-      delete sanitized.accessKeyHash;
+      const rememberMe = Boolean(req.body?.rememberMe);
+      const token = issueUserSessionToken(user, rememberMe);
+      setUserSessionCookie(req, res, token, rememberMe);
 
-      res.json({ success: true, user: sanitized });
+      res.json({ success: true, user: sanitizeUser(user), token });
     } catch (err: any) {
       console.error('[Auth API /api/auth/login] Error:', err);
       await appendSystemErrorEntry({ level: 'error', source: '/api/auth/login', message: err?.message || 'Login error' });
@@ -788,6 +878,9 @@ async function startServer() {
         // 9. Create and persist user record with PBKDF2 password hash & bcrypt Access Key hash
         const accessKeyHash = await hashAccessKey(rawAccessKey);
 
+        const nowIso = new Date().toISOString();
+        const isEmployerAutoVerified = role === 'employer';
+
         const newUser: UserRecord = {
           id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           name,
@@ -806,8 +899,9 @@ async function startServer() {
           failedAttempts: 0,
           lockoutUntil: null,
           status: 'active',
-          createdAt: new Date().toISOString(),
-          emailVerified: settings.registration.emailVerificationMode === 'optional'
+          createdAt: nowIso,
+          emailVerified: isEmployerAutoVerified,
+          emailVerifiedAt: isEmployerAutoVerified ? nowIso : undefined
         };
 
         try {
@@ -845,12 +939,10 @@ async function startServer() {
 
         console.log('[Auth API /api/auth/register] User registered successfully (automatic activation):', newUser.id, newUser.email, newUser.role);
 
-        const sanitized = { ...newUser };
-        delete sanitized.password;
-        delete sanitized.passwordHash;
-        delete sanitized.accessKeyHash;
+        const token = issueUserSessionToken(newUser, true);
+        setUserSessionCookie(req, res, token, true);
 
-        res.status(201).json({ success: true, user: sanitized });
+        res.status(201).json({ success: true, user: sanitizeUser(newUser), token });
       } catch (err: any) {
         console.error('[Auth API /api/auth/register] Error:', err);
         await appendSystemErrorEntry({ level: 'error', source: '/api/auth/register', message: err?.message || 'Register error' });
@@ -862,22 +954,54 @@ async function startServer() {
     });
   });
 
-  // Sync users list (sanitized)
-  app.get('/api/auth/users', async (_req: Request, res: Response) => {
+  // Get currently authenticated marketplace user profile
+  app.get('/api/auth/me', async (req: Request, res: Response) => {
     try {
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor || !actor.user) {
+        return res.status(401).json({ error: 'Not authenticated.' });
+      }
+      res.json({ success: true, user: sanitizeUser(actor.user) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load current user session.' });
+    }
+  });
+
+  // Sign out marketplace user session
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    clearUserSessionCookie(req, res);
+    res.json({ success: true });
+  });
+
+  // Sync users list (Admin-only; never exposed publicly)
+  app.get('/api/auth/users', async (req: Request, res: Response) => {
+    try {
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor) {
+        return res.status(401).json({ error: 'Authentication required.' });
+      }
+      if (!actor.isAdmin) {
+        return res.status(403).json({ error: 'Administrator permission required to view user directory.' });
+      }
       const users = await getUsers();
-      const sanitized = users.map(u => {
-        const copy = { ...u };
-        delete copy.password;
-        delete copy.passwordHash;
-        delete copy.accessKeyHash;
-        return copy;
-      });
-      res.json(sanitized);
+      res.json(users.map(sanitizeUser));
     } catch {
       res.status(500).json({ error: 'Failed to retrieve users.' });
     }
   });
+
+  async function enrichJobsVerifiedStatus(jobs: any[]): Promise<any[]> {
+    const users = await getUsers();
+    const verifiedOwnerIds = new Set(
+      users
+        .filter(u => u.role === 'employer' || u.role === 'admin')
+        .map(u => u.id)
+    );
+    return jobs.map(j => ({
+      ...j,
+      isEmployerVerified: Boolean(j.isEmployerVerified) || (Boolean(j.userId) && verifiedOwnerIds.has(j.userId))
+    }));
+  }
 
   // Get all published jobs (respects hideAllPublicJobs & filters out hidden/rejected jobs publicly)
   app.get('/api/jobs', async (_req: Request, res: Response) => {
@@ -887,10 +1011,32 @@ async function startServer() {
         return res.json([]);
       }
       const allJobs = await getJobs();
-      const jobs = allJobs.filter(j => j.status !== 'hidden' && j.status !== 'rejected');
-      res.json(jobs);
+      const visibleJobs = allJobs.filter(j => j.status !== 'hidden' && j.status !== 'rejected');
+      const enriched = await enrichJobsVerifiedStatus(visibleJobs);
+      res.json(enriched);
     } catch {
       res.status(500).json({ error: 'Failed to retrieve jobs.' });
+    }
+  });
+
+  // Get ONLY the authenticated employer's own job posts (or all jobs for Admin)
+  app.get('/api/employer/jobs', async (req: Request, res: Response) => {
+    try {
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor) {
+        return res.status(401).json({ error: 'Please sign in to access your job posts.' });
+      }
+      if (!actor.isAdmin && actor.user?.role !== 'employer') {
+        return res.status(403).json({ error: 'Only registered employer accounts can access employer job management.' });
+      }
+      const allJobs = await getJobs();
+      const scopedJobs = actor.isAdmin
+        ? allJobs
+        : allJobs.filter(j => Boolean(j.userId) && j.userId === actor.id);
+      const enriched = await enrichJobsVerifiedStatus(scopedJobs);
+      res.json(enriched);
+    } catch {
+      res.status(500).json({ error: 'Failed to retrieve employer job posts.' });
     }
   });
 
@@ -906,7 +1052,8 @@ async function startServer() {
       const job = findJobInList(jobs, idOrSlug);
 
       if (job && job.status !== 'hidden' && job.status !== 'rejected') {
-        res.json(job);
+        const [enriched] = await enrichJobsVerifiedStatus([job]);
+        res.json(enriched);
       } else {
         res.status(404).json({ error: 'Job not found', requested: idOrSlug });
       }
@@ -915,34 +1062,11 @@ async function startServer() {
     }
   });
 
-  // Helper to resolve requester & job ownership cleanly
-  async function resolveJobRequester(req: Request, bodyUserId?: string, bodyEmail?: string): Promise<any | null> {
-    const headerId = req.headers['x-gulfaro-user-id'];
-    const headerEmail = req.headers['x-gulfaro-user-email'];
-    const targetId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : bodyUserId;
-    if (targetId) {
-      const byId = await findUserById(targetId);
-      if (byId) return byId;
-    }
-    const fallbackEmail =
-      (typeof bodyEmail === 'string' && bodyEmail.trim() ? bodyEmail : undefined) ||
-      (typeof headerEmail === 'string' && headerEmail.trim() ? headerEmail : undefined);
-    if (fallbackEmail) {
-      const byEmail = await findUserByEmail(String(fallbackEmail).trim().toLowerCase());
-      if (byEmail) return byEmail;
-    }
-    return null;
-  }
-
-  function isJobOwnerOrAdmin(user: any, job: any): boolean {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-    if (user.role !== 'employer') return false;
-    if (job.userId && job.userId === user.id) return true;
-    if (job.contactEmail && user.email && job.contactEmail.toLowerCase() === user.email.toLowerCase()) return true;
-    if (user.id === 'user-emp-1' && String(job.company || '').includes('Al-Bawani')) return true;
-    if (user.id === 'user-emp-2' && String(job.company || '').includes('FinGulf')) return true;
-    return false;
+  function isJobOwnerOrAdmin(actor: AuthenticatedActor | null, job: any): boolean {
+    if (!actor || !job) return false;
+    if (actor.isAdmin) return true;
+    if (actor.user?.role !== 'employer') return false;
+    return Boolean(job.userId) && job.userId === actor.id;
   }
 
   function collectJobLinkValidationFields(data: any): Record<string, any> {
@@ -968,7 +1092,7 @@ async function startServer() {
     };
   }
 
-  // Create a new job advertisement (Employer-Only, Automatic Publishing with Strict No-External-Links Validation)
+  // Create a new job advertisement (Authenticated Employer or Admin only)
   app.post('/api/jobs', async (req: Request, res: Response) => {
     try {
       const settings = await getSiteSettings();
@@ -979,26 +1103,27 @@ async function startServer() {
         return res.status(403).json({ error: 'New job publishing is temporarily disabled by site administration.' });
       }
 
-      const adData = req.body || {};
-      const postingUser = await resolveJobRequester(req, adData.userId, adData.requesterEmail);
-
-      // Strict Registered Employer Permission Enforcement
-      if (!postingUser) {
-        return res.status(403).json({
-          error: 'Only registered Gulfaro employer accounts can publish job postings. Please sign in as an employer.'
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor) {
+        return res.status(401).json({
+          error: 'Authentication required. Please sign in with a registered Gulfaro employer account to publish jobs.'
         });
       }
-      if (postingUser.role !== 'employer' && postingUser.role !== 'admin') {
+      if (!actor.isAdmin && actor.user?.role !== 'employer') {
         return res.status(403).json({
           error: 'Job seeker accounts cannot publish job vacancies. Please sign in with a registered employer account.'
         });
       }
-      if (postingUser.status === 'suspended' || postingUser.status === 'banned' || postingUser.status === 'deactivated') {
-        return res.status(403).json({ error: `Your account is ${postingUser.status} and cannot publish jobs.` });
+      if (actor.user) {
+        if (actor.user.status === 'suspended' || actor.user.status === 'banned' || actor.user.status === 'deactivated') {
+          return res.status(403).json({ error: `Your account is ${actor.user.status} and cannot publish jobs.` });
+        }
+        if (actor.user.postingRestricted) {
+          return res.status(403).json({ error: 'Your employer account is currently restricted from posting new vacancies.' });
+        }
       }
-      if (postingUser.postingRestricted) {
-        return res.status(403).json({ error: 'Your employer account is currently restricted from posting new vacancies.' });
-      }
+
+      const adData = req.body || {};
 
       // Strict No-External-Links Policy across EVERY field (checked before format rules)
       const linkCheck = validateJobFieldsForExternalLinks(collectJobLinkValidationFields(adData));
@@ -1098,11 +1223,18 @@ async function startServer() {
         explicitContactMethod === 'email' ? '' : rawPhone;
       const cleanPhoneDigits = finalContactPhone.replace(/[^0-9+]/g, '');
 
+      const {
+        requesterUserId: _rUid,
+        requesterEmail: _rEmail,
+        userId: _ignoredUserId,
+        ...cleanAdData
+      } = adData;
+
       const newJob = {
-        ...adData,
+        ...cleanAdData,
         id,
         slug,
-        userId: postingUser.id,
+        userId: actor.id,
         company: String(adData.company || '').trim(),
         contactPerson: String(adData.contactPerson || '').trim(),
         experienceLevel: String(adData.experienceLevel || '').trim(),
@@ -1117,12 +1249,12 @@ async function startServer() {
           ? (adData.contactWhatsapp ? String(adData.contactWhatsapp).trim() : cleanPhoneDigits)
           : '',
         howToApply: 'email',
-        postedAt: adData.postedAt || now.toISOString(),
+        postedAt: now.toISOString(),
         expiresAt: adData.expiresAt || expiry.toISOString(),
-        viewsCount: adData.viewsCount || 1,
-        inquiriesCount: adData.inquiriesCount || 0,
-        status: 'active', // Always publish valid jobs automatically & immediately
-        isEmployerVerified: Boolean(postingUser.emailVerified)
+        viewsCount: 1,
+        inquiriesCount: 0,
+        status: 'active',
+        isEmployerVerified: true
       };
 
       await upsertJob(newJob);
@@ -1135,11 +1267,27 @@ async function startServer() {
     }
   });
 
-  // Update a job (Owner Employer or Admin only + Strict No-External-Links Validation)
+  // Update a job (Strict Authenticated Owner Employer or Admin only + Strict No-External-Links Validation)
   app.put('/api/jobs/:id', async (req: Request, res: Response) => {
     try {
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor) {
+        return res.status(401).json({ error: 'Authentication required. Please sign in to edit a job post.' });
+      }
+
       const { id } = req.params;
-      const { requesterUserId, ...updates } = req.body || {};
+      const {
+        requesterUserId: _rUid,
+        requesterEmail: _rEmail,
+        userId: _ignoredUserId,
+        id: _ignoredId,
+        isEmployerVerified: _ignoredVerified,
+        viewsCount: _ignoredViews,
+        inquiriesCount: _ignoredInq,
+        postedAt: _ignoredPostedAt,
+        ...updates
+      } = req.body || {};
+
       const jobs = await getJobs();
       const existing = jobs.find(j => j.id.toLowerCase() === id.toLowerCase());
 
@@ -1147,9 +1295,8 @@ async function startServer() {
         return res.status(404).json({ error: 'Job not found to update' });
       }
 
-      const requester = await resolveJobRequester(req, requesterUserId || updates.userId, undefined);
-      if (!isJobOwnerOrAdmin(requester, existing)) {
-        return res.status(403).json({ error: 'You do not have permission to edit this job advertisement.' });
+      if (!isJobOwnerOrAdmin(actor, existing)) {
+        return res.status(403).json({ error: 'Forbidden: You can only edit job posts owned by your employer account.' });
       }
 
       if (updates.howToApply && updates.howToApply !== 'email') {
@@ -1227,7 +1374,8 @@ async function startServer() {
         ...updates,
         howToApply: 'email',
         id: existing.id,
-        userId: existing.userId
+        userId: existing.userId,
+        isEmployerVerified: Boolean(existing.isEmployerVerified) || Boolean(existing.userId)
       };
       await upsertJob(updatedJob);
       res.json(updatedJob);
@@ -1237,9 +1385,14 @@ async function startServer() {
     }
   });
 
-  // Delete a job (Owner Employer or Admin only)
+  // Delete a job (Strict Authenticated Owner Employer or Admin only)
   app.delete('/api/jobs/:id', async (req: Request, res: Response) => {
     try {
+      const actor = await resolveAuthenticatedActor(req);
+      if (!actor) {
+        return res.status(401).json({ error: 'Authentication required. Please sign in to delete a job post.' });
+      }
+
       const { id } = req.params;
       const jobs = await getJobs();
       const target = jobs.find(j => j.id.toLowerCase() === id.toLowerCase());
@@ -1248,14 +1401,12 @@ async function startServer() {
         return res.status(404).json({ error: 'Job not found to delete' });
       }
 
-      const bodyUserId = req.body?.requesterUserId || req.body?.userId || (typeof req.query.userId === 'string' ? req.query.userId : undefined);
-      const requester = await resolveJobRequester(req, bodyUserId, undefined);
-      if (!isJobOwnerOrAdmin(requester, target)) {
-        return res.status(403).json({ error: 'You do not have permission to delete this job advertisement.' });
+      if (!isJobOwnerOrAdmin(actor, target)) {
+        return res.status(403).json({ error: 'Forbidden: You can only delete job posts owned by your employer account.' });
       }
 
       await deleteJobById(target.id);
-      res.json({ success: true, deletedId: id });
+      res.json({ success: true, deletedId: target.id });
     } catch (err: any) {
       console.error('Error deleting job:', err);
       res.status(500).json({ error: 'Failed to delete job.' });
@@ -1613,10 +1764,13 @@ ${xmlItems}
 
       if (targetSlugOrId) {
         const [jobs, settings] = await Promise.all([getJobs(), getSiteSettings()]);
-        const matchedJob =
+        const rawMatchedJob =
           settings.emergency.hideAllPublicJobs || settings.emergency.emergencyShutdown
             ? undefined
             : findJobInList(jobs, targetSlugOrId);
+        const matchedJob = rawMatchedJob
+          ? (await enrichJobsVerifiedStatus([rawMatchedJob]))[0]
+          : undefined;
 
         if (matchedJob && matchedJob.status !== 'hidden' && matchedJob.status !== 'rejected') {
           const active = isJobActiveAndUnexpired(matchedJob as any);

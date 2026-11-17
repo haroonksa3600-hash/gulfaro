@@ -1,0 +1,50 @@
+{
+  "paymentCollectionEnabled": false,
+  "paymentGatewayProvider": "none",
+  "currency": "USD",
+  "plans": [
+    {
+      "id": "plan-standard",
+      "name": "Standard Classified",
+      "slug": "standard",
+      "priceMonthly": 0,
+      "durationDays": 30,
+      "description": "Instant 30-day listing with direct WhatsApp, phone, and email inquiries.",
+      "features": [
+        "Instant Publishing",
+        "30-Day Active Listing",
+        "Direct WhatsApp Button"
+      ],
+      "active": true
+    },
+    {
+      "id": "plan-featured",
+      "name": "Featured Job Boost",
+      "slug": "featured",
+      "priceMonthly": 29,
+      "durationDays": 30,
+      "description": "Priority placement above standard jobs with amber Featured highlight badge.",
+      "features": [
+        "Priority Search Ranking",
+        "Featured Highlight Badge",
+        "30-Day Active Listing"
+      ],
+      "active": true
+    },
+    {
+      "id": "plan-sponsored",
+      "name": "Sponsored GCC Spotlight",
+      "slug": "sponsored",
+      "priceMonthly": 79,
+      "durationDays": 45,
+      "description": "Top-of-feed pinned visibility across all 6 GCC portals.",
+      "features": [
+        "Top Feed Placement",
+        "45-Day Extended Lifecycle",
+        "Urgent + Featured Badges"
+      ],
+      "active": true
+    }
+  ],
+  "transactions": []
+}

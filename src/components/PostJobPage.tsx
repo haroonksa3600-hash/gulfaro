@@ -317,11 +317,22 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     }
   };
 
+  const isAuthorizedToEdit =
+    !editingJob ||
+    (Boolean(currentUser) &&
+      (currentUser?.role === 'admin' ||
+        (currentUser?.role === 'employer' && Boolean(editingJob.userId) && editingJob.userId === currentUser.id)));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
     setLinkErrorFields(new Set());
     setFieldErrors({});
+
+    if (!isAuthorizedToEdit) {
+      setSubmitError('Forbidden: You can only edit job posts owned by your employer account.');
+      return;
+    }
 
     // 1. Validate Required Fields (Company Name, Contact Person, Required Experience, and Education are optional)
     const missingErrors: Record<string, string> = {};
@@ -496,6 +507,29 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     }
     return null;
   };
+
+  if (editingJob && !isAuthorizedToEdit) {
+    return (
+      <div className="bg-slate-50 min-h-[70vh] py-12 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-rose-200 p-7 text-center space-y-4 shadow-sm">
+          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h1 className="text-lg font-extrabold text-slate-900">Access Denied</h1>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            You do not have permission to edit this job advertisement. Employers can only edit job posts created by their own account.
+          </p>
+          <button
+            type="button"
+            onClick={onManageJobs}
+            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            Back to My Job Posts
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Published Success Confirmation View
   if (publishedJob) {

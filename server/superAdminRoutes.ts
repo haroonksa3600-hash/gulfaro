@@ -597,7 +597,7 @@ export function createSuperAdminRouter(): express.Router {
 
       const jobSeekers = users.filter(u => u.role === 'job_seeker');
       const employers = users.filter(u => u.role === 'employer');
-      const verifiedEmployers = employers.filter(u => u.emailVerified);
+      const verifiedEmployers = employers.filter(u => u.emailVerified !== false);
       const suspendedUsers = users.filter(u => u.status === 'suspended' || u.status === 'banned');
 
       const activeJobs = jobs.filter(j => j.status === 'active');
@@ -774,7 +774,7 @@ export function createSuperAdminRouter(): express.Router {
       const enriched = users.map(u => {
         const { password: _p, passwordHash: _ph, accessKeyHash: _ak, ...safe } = u;
         const userJobs = jobs.filter(
-          j => j.userId === u.id || (j.contactEmail && j.contactEmail.toLowerCase() === u.email.toLowerCase())
+          j => Boolean(j.userId) && j.userId === u.id
         );
         const userApps = applications.filter(
           a => a.applicantUserId === u.id || (a.applicantEmail && a.applicantEmail.toLowerCase() === u.email.toLowerCase())
@@ -810,6 +810,8 @@ export function createSuperAdminRouter(): express.Router {
       }
 
       const validRole = role === 'employer' ? 'employer' : 'job_seeker';
+      const nowIso = new Date().toISOString();
+      const autoVerified = validRole === 'employer' ? true : Boolean(emailVerified);
       const newUser: any = {
         id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: name.trim(),
@@ -825,9 +827,9 @@ export function createSuperAdminRouter(): express.Router {
         headline: validRole === 'job_seeker' ? (professionalTitle || 'GCC Candidate') : `Recruiter at ${companyName || name}`,
         passwordHash: hashPassword(password),
         status: 'active',
-        emailVerified: Boolean(emailVerified),
-        emailVerifiedAt: emailVerified ? new Date().toISOString() : undefined,
-        createdAt: new Date().toISOString()
+        emailVerified: autoVerified,
+        emailVerifiedAt: autoVerified ? nowIso : undefined,
+        createdAt: nowIso
       };
 
       await saveUser(newUser);
@@ -1002,16 +1004,82 @@ export function createSuperAdminRouter(): express.Router {
 
   router.get('/jobs', requirePermission('jobs'), async (_req: AuthenticatedAdminRequest, res: Response) => {
     try {
-      const [jobs, reports] = await Promise.all([getJobs(), getReports()]);
+      const [jobs, reports, users, admins] = await Promise.all([
+        getJobs(),
+        getReports(),
+        getUsers(),
+        getAdmins()
+      ]);
+      const usersById = new Map(users.map(u => [u.id, u]));
+      const adminsById = new Map(admins.map(a => [a.id, a]));
+      const norm = (v?: string) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const flaggedJobs: Array<{
+        jobId: string;
+        title: string;
+        company: string;
+        userId: string | null;
+        ownerEmail?: string;
+        ownerCompany?: string;
+        ownershipStatus: 'missing_owner' | 'owner_not_found' | 'uncertain_company_mismatch';
+      }> = [];
+
       const enriched = jobs.map(j => {
         const jobReports = reports.filter(r => r.targetType === 'job' && r.targetId === j.id);
+        const ownerId = j.userId ? String(j.userId).trim() : '';
+        const ownerUser = ownerId ? usersById.get(ownerId) : undefined;
+        const ownerAdmin = ownerId ? adminsById.get(ownerId) : undefined;
+
+        let ownershipStatus: 'valid' | 'missing_owner' | 'owner_not_found' | 'uncertain_company_mismatch' = 'valid';
+        if (!ownerId) {
+          ownershipStatus = 'missing_owner';
+        } else if (!ownerUser && !ownerAdmin) {
+          ownershipStatus = 'owner_not_found';
+        } else if (ownerUser && ownerUser.role === 'employer') {
+          const jComp = norm(j.company);
+          const uComp = norm(ownerUser.companyName || ownerUser.hiringOrgName);
+          const emailMatch =
+            j.contactEmail &&
+            ownerUser.email &&
+            j.contactEmail.toLowerCase() === ownerUser.email.toLowerCase();
+          if (jComp && uComp && !jComp.includes(uComp) && !uComp.includes(jComp) && !emailMatch) {
+            ownershipStatus = 'uncertain_company_mismatch';
+          }
+        }
+
+        if (ownershipStatus !== 'valid') {
+          flaggedJobs.push({
+            jobId: j.id,
+            title: j.title,
+            company: j.company || '',
+            userId: ownerId || null,
+            ownerEmail: ownerUser?.email || ownerAdmin?.email,
+            ownerCompany: ownerUser?.companyName || ownerAdmin?.fullName,
+            ownershipStatus
+          });
+        }
+
         return {
           ...j,
           reportsCount: jobReports.length,
-          openReportsCount: jobReports.filter(r => r.status === 'open' || r.status === 'investigating').length
+          openReportsCount: jobReports.filter(r => r.status === 'open' || r.status === 'investigating').length,
+          ownershipStatus,
+          ownerEmail: ownerUser?.email || ownerAdmin?.email || null,
+          ownerName: ownerUser?.name || ownerAdmin?.fullName || null
         };
       });
-      res.json({ jobs: enriched });
+
+      res.json({
+        jobs: enriched,
+        ownershipAudit: {
+          total: jobs.length,
+          valid: jobs.length - flaggedJobs.length,
+          missingOwner: flaggedJobs.filter(f => f.ownershipStatus === 'missing_owner').length,
+          ownerNotFound: flaggedJobs.filter(f => f.ownershipStatus === 'owner_not_found').length,
+          uncertainCompanyMismatch: flaggedJobs.filter(f => f.ownershipStatus === 'uncertain_company_mismatch').length,
+          flaggedJobs
+        }
+      });
     } catch {
       res.status(500).json({ error: 'Failed to load jobs.' });
     }

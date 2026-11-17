@@ -248,10 +248,11 @@
     "hiringOrgName": "Apex Hiring",
     "passwordHash": "pbkdf2$c75e7376a5542e2990e76fc98cc208ed$4cdcad55a1e1e1d521ea2a5b83e7c29af56836ffa407eb1858be7678044465f6c74eaec27a6e347f78ee4eca9e429bfdf413743cb584612144cb241bca4c8077",
     "createdAt": "2026-11-11T11:38:34.223Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:38:34.223Z"
   },
   {
     "id": "usr-1794397177045-1bi1",
@@ -267,10 +268,11 @@
     "hiringOrgName": "Apex Hiring",
     "passwordHash": "pbkdf2$a90dd88b2bfed2de8d813921a48f9003$5c3dea1982703412a2cc3e6f20a4078cabde580b4280ccc4556592adaba81af634552015852402783fbe1e256cd99a45d6487607ab4281b67cdabc99dae76664",
     "createdAt": "2026-11-11T11:39:37.140Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:39:37.140Z"
   },
   {
     "id": "usr-1794397199793-25nq",
@@ -304,10 +306,11 @@
     "hiringOrgName": "Gulf Oasis Recruitment Division",
     "passwordHash": "pbkdf2$5852a6ee7d4d846cb0710cf6f2efa3ad$9826a1307d06b362a9e62bd68e2473cd6ae83c72e48120c19ecccf3da8ec8090f4fb3ce402d4acfbc2e1b246dbeae54aff8504c434d753f1ff343349e7d1b08b",
     "createdAt": "2026-11-11T11:39:59.943Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:39:59.943Z"
   },
   {
     "id": "usr-1794397820821-9p0c",

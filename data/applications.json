@@ -1,0 +1,21 @@
+[
+  {
+    "id": "app-101",
+    "jobId": "GF-901",
+    "jobTitle": "Senior Civil Site Engineer – High-Rise & Infrastructure",
+    "companyName": "Al-Bawani Contracting Co.",
+    "applicantUserId": "user-seeker-1",
+    "applicantName": "Zaid Al-Mansoor",
+    "applicantEmail": "zaid.almansoor@example.com",
+    "applicantPhone": "+966 50 123 4567",
+    "applicantWhatsapp": "+966501234567",
+    "currentCountry": "saudi-arabia",
+    "currentCity": "Riyadh",
+    "iqamaStatus": "transferable",
+    "yearsExperience": "5 years",
+    "coverNote": "Dear Hiring Team, I am an SCE-registered Civil Engineer with 5 years of site execution experience in Riyadh. My Iqama is transferable immediately via Qiwa.",
+    "resumeFileName": "Zaid_AlMansoor_Civil_Engineer_CV.pdf",
+    "appliedAt": "2026-11-16T08:53:25.831Z",
+    "status": "shortlisted"
+  }
+]

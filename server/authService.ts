@@ -919,153 +919,15 @@ export function generateEmployerVerificationEmailHtml(
 </html>`;
 }
 
-// Send Employer Email Verification
+// Send Employer Email Verification (Disabled: registered employers receive automatic Verified Employer status)
 export async function sendEmployerEmailVerification(
-  email: string,
-  appUrl: string,
-  clientIp = 'unknown'
+  _email: string,
+  _appUrl: string,
+  _clientIp = 'unknown'
 ): Promise<{ success: boolean; message: string; previewUrl?: string; code?: string }> {
-  const cleanEmail = email.trim().toLowerCase();
-
-  // Rate limit: max 5 requests per 15 min per IP/email
-  const rateLimitKey = `email_verify:${clientIp}:${cleanEmail}`;
-  if (!checkRateLimit(rateLimitKey)) {
-    return {
-      success: false,
-      message: 'Too many verification requests. Please wait 15 minutes before requesting another code.'
-    };
-  }
-
-  // Find user in server database
-  const user = await findUserByEmail(cleanEmail);
-
-  if (!user) {
-    return {
-      success: false,
-      message: 'Account not found with this email address. Please sign in or register.'
-    };
-  }
-
-  // Generate 6-digit numeric code and secure token
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const rawToken = crypto.randomBytes(24).toString('hex');
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
-
-  // Invalidate any existing unused verification codes for this email
-  const existingCodes = await getVerificationCodes();
-  const updatedCodes = existingCodes.map(c => {
-    if (c.email.toLowerCase() === cleanEmail && !c.used) {
-      return { ...c, used: true, usedAt: Date.now() };
-    }
-    return c;
-  });
-
-  updatedCodes.push({
-    code,
-    token: rawToken,
-    email: cleanEmail,
-    expiresAt,
-    used: false,
-    createdAt: Date.now(),
-    ip: clientIp
-  });
-  await saveVerificationCodes(updatedCodes);
-
-  const verifyLink = `${appUrl.replace(/\/+$/, '')}/verify-email?code=${code}&email=${encodeURIComponent(cleanEmail)}&token=${rawToken}`;
-  const emailHtml = generateEmployerVerificationEmailHtml(user.name, user.companyName || 'Corporate Employer', code, verifyLink);
-  const fromAddress = getSenderEmail('verify');
-
-  // 1. Resend API Delivery
-  const resend = getResendClient();
-  if (resend) {
-    try {
-      console.log(`[Gulfaro Resend] Dispatching employer verification code to: ${cleanEmail} from: ${fromAddress}`);
-      const { data, error } = await resend.emails.send({
-        from: fromAddress,
-        to: cleanEmail,
-        subject: 'Verify Your Employer Corporate Email - Gul Faro',
-        html: emailHtml,
-        replyTo: 'admingulfaro@gmail.com'
-      });
-
-      if (error) {
-        console.error('[Gulfaro Resend] Verification dispatch error:', error);
-        await appendEmailLogEntry({
-          recipient: cleanEmail,
-          subject: 'Verify Your Employer Corporate Email - Gul Faro',
-          category: 'verification',
-          provider: 'Resend',
-          status: 'failed',
-          error: error.message
-        });
-        return {
-          success: false,
-          message: error.message || 'Verification email delivery failed with provider.'
-        };
-      }
-
-      console.log(`[Gulfaro Resend] Verification email accepted! ID: ${data?.id}`);
-      await appendEmailLogEntry({
-        recipient: cleanEmail,
-        subject: 'Verify Your Employer Corporate Email - Gul Faro',
-        category: 'verification',
-        provider: 'Resend',
-        status: 'sent',
-        messageId: data?.id
-      });
-      return {
-        success: true,
-        message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your inbox and spam folder.`,
-        code
-      };
-    } catch (err: any) {
-      console.error('[Gulfaro Resend] Error dispatching verification:', err);
-      await appendEmailLogEntry({
-        recipient: cleanEmail,
-        subject: 'Verify Your Employer Corporate Email - Gul Faro',
-        category: 'verification',
-        provider: 'Resend',
-        status: 'failed',
-        error: err.message
-      });
-      return {
-        success: false,
-        message: err.message || 'Failed to communicate with Resend email delivery service.'
-      };
-    }
-  }
-
-  // 2. Custom SMTP fallback if SMTP_HOST and SMTP_USER are defined
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      const { transporter } = await getEmailTransporter();
-      await transporter.sendMail({
-        from: fromAddress,
-        to: cleanEmail,
-        subject: 'Verify Your Employer Corporate Email - Gul Faro',
-        html: emailHtml
-      });
-      return {
-        success: true,
-        message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your inbox and spam folder.`,
-        code
-      };
-    } catch (err: any) {
-      console.error('[Gulfaro SMTP] Error dispatching verification email:', err);
-      return {
-        success: false,
-        message: `SMTP error: ${err.message || 'Delivery failed'}`
-      };
-    }
-  }
-
-  // 3. No provider
   return {
     success: false,
-    message: 'Email delivery provider is pending configuration. Please set RESEND_API_KEY in your environment variables.'
+    message: 'Employer email verification is no longer required. Registered employer accounts automatically receive the Verified Employer badge.'
   };
 }
 
@@ -1131,6 +993,39 @@ export async function verifyEmployerEmailRecord(
 // =========================================================================
 
 const JWT_RESET_SECRET = process.env.JWT_SECRET || 'gulfaro-access-key-jwt-secret-secure-2026';
+
+export function issueUserSessionToken(user: Pick<UserRecord, 'id' | 'email' | 'role'>, rememberMe = false): string {
+  return jwt.sign(
+    {
+      sub: user.id,
+      email: user.email.toLowerCase(),
+      role: user.role,
+      purpose: 'gulfaro-user-session'
+    },
+    JWT_RESET_SECRET,
+    { expiresIn: rememberMe ? '30d' : '24h' }
+  );
+}
+
+export function verifyUserSessionToken(
+  token: string
+): { valid: boolean; userId?: string; email?: string; role?: string; iatMs?: number } {
+  try {
+    const decoded = jwt.verify(token, JWT_RESET_SECRET) as any;
+    if (!decoded || decoded.purpose !== 'gulfaro-user-session' || !decoded.sub) {
+      return { valid: false };
+    }
+    return {
+      valid: true,
+      userId: String(decoded.sub),
+      email: typeof decoded.email === 'string' ? decoded.email.toLowerCase() : undefined,
+      role: typeof decoded.role === 'string' ? decoded.role : undefined,
+      iatMs: typeof decoded.iat === 'number' ? decoded.iat * 1000 : undefined
+    };
+  } catch {
+    return { valid: false };
+  }
+}
 
 /**
  * Hash a 5-digit Access Key using bcrypt with salt rounds of 10.

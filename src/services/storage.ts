@@ -10,6 +10,7 @@ const STORAGE_KEY_USER = 'golfaro_current_user_v1';
 const STORAGE_KEY_ALL_USERS = 'golfaro_all_users_v1';
 export const STORAGE_KEY_GULFARO_USERS = 'gulfaro_users';
 export const STORAGE_KEY_SESSION = 'gulfaro_session';
+const STORAGE_KEY_AUTH_TOKEN = 'gulfaro_auth_token_v1';
 const STORAGE_KEY_ADSENSE = 'golfaro_adsense_config_v1';
 
 export const DEMO_USERS: User[] = [
@@ -213,7 +214,7 @@ class StorageService {
       this.saveUsersToStorage();
     }
 
-    // Background sync with server users database
+    // Background sync of authenticated user session (/api/auth/me)
     this.syncUsersWithServer().catch(() => {});
     // Load jobs
     try {
@@ -469,6 +470,34 @@ class StorageService {
     }
   }
 
+  private getAuthToken(): string | null {
+    try {
+      return localStorage.getItem(STORAGE_KEY_AUTH_TOKEN);
+    } catch {
+      return null;
+    }
+  }
+
+  private setAuthToken(token: string | null): void {
+    try {
+      if (token) {
+        localStorage.setItem(STORAGE_KEY_AUTH_TOKEN, token);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_AUTH_TOKEN);
+      }
+    } catch (e) {
+      console.error('Failed to persist auth token:', e);
+    }
+  }
+
+  private buildAuthHeaders(extra?: Record<string, string>): Record<string, string> {
+    const token = this.getAuthToken();
+    return {
+      ...(extra || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+  }
+
   private async fetchJsonWithRetry(
     url: string,
     init: RequestInit,
@@ -482,6 +511,7 @@ class StorageService {
       try {
         const res = await fetch(apiUrl(url), {
           ...init,
+          credentials: 'include',
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -522,23 +552,43 @@ class StorageService {
     throw lastError || new Error('Network request failed');
   }
 
+  public async fetchEmployerJobsAsync(): Promise<{ success: boolean; jobs: JobAd[]; error?: string }> {
+    try {
+      const { res, data, isJson } = await this.fetchJsonWithRetry('/api/employer/jobs', {
+        method: 'GET',
+        headers: this.buildAuthHeaders()
+      });
+      if (!res.ok) {
+        if (res.status === 401) {
+          this.logoutUser();
+        }
+        return {
+          success: false,
+          jobs: [],
+          error: (isJson && data?.error) || 'Failed to load employer job posts.'
+        };
+      }
+      if (isJson && Array.isArray(data)) {
+        const scopedIds = new Set(data.map((j: JobAd) => j.id));
+        const others = this.jobs.filter(j => !scopedIds.has(j.id));
+        this.jobs = [...data, ...others];
+        this.saveJobsToStorage();
+        return { success: true, jobs: data };
+      }
+      return { success: false, jobs: [], error: 'Unexpected response from server.' };
+    } catch {
+      return { success: false, jobs: [], error: 'Unable to reach server to load your job posts.' };
+    }
+  }
+
   public async createJobAsync(
     adData: Omit<JobAd, 'id' | 'slug' | 'postedAt' | 'expiresAt' | 'viewsCount' | 'inquiriesCount'>
   ): Promise<{ success: boolean; job?: JobAd; error?: string; invalidFields?: string[] }> {
     try {
-      const requesterId = this.currentUser?.id || adData.userId || '';
-      const requesterEmail = this.currentUser?.email || '';
       const { res, data, isJson } = await this.fetchJsonWithRetry('/api/jobs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-        },
-        body: JSON.stringify({
-          ...adData,
-          ...(requesterEmail ? { requesterEmail } : {})
-        })
+        headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(adData)
       });
 
       if (!res.ok) {
@@ -627,17 +677,11 @@ class StorageService {
     this.jobs.unshift(newJob);
     this.saveJobsToStorage();
 
-    // Persist to server database API so shared link works across any other browser or device
     if (typeof window !== 'undefined') {
-      const requesterId = this.currentUser?.id || adData.userId || '';
-      const requesterEmail = this.currentUser?.email || '';
       fetch(apiUrl('/api/jobs'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-        },
+        credentials: 'include',
+        headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(newJob)
       }).catch(err => console.warn('Could not sync created job to server:', err));
     }
@@ -651,20 +695,10 @@ class StorageService {
   ): Promise<{ success: boolean; job?: JobAd; error?: string; invalidFields?: string[] }> {
     if (!id) return { success: false, error: 'Missing job ID.' };
     try {
-      const requesterId = this.currentUser?.id || '';
-      const requesterEmail = this.currentUser?.email || '';
       const { res, data, isJson } = await this.fetchJsonWithRetry(`/api/jobs/${encodeURIComponent(id)}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-        },
-        body: JSON.stringify({
-          ...updates,
-          requesterUserId: requesterId,
-          ...(requesterEmail ? { requesterEmail } : {})
-        })
+        headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(updates)
       });
 
       if (!res.ok) {
@@ -722,25 +756,23 @@ class StorageService {
     const cleanId = id.trim().toLowerCase();
     const index = this.jobs.findIndex(j => j.id && j.id.toLowerCase() === cleanId);
     if (index === -1) return null;
+    const existing = this.jobs[index];
+    if (this.currentUser && this.currentUser.role !== 'admin' && existing.userId !== this.currentUser.id) {
+      return null;
+    }
 
     this.jobs[index] = {
-      ...this.jobs[index],
+      ...existing,
       ...updates
     };
     this.saveJobsToStorage();
 
-    // Persist changes to server database API
     if (typeof window !== 'undefined') {
-      const requesterId = this.currentUser?.id || '';
-      const requesterEmail = this.currentUser?.email || '';
       fetch(apiUrl(`/api/jobs/${encodeURIComponent(this.jobs[index].id)}`), {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-          ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-        },
-        body: JSON.stringify({ ...updates, requesterUserId: requesterId })
+        credentials: 'include',
+        headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(updates)
       }).catch(err => console.warn('Could not sync updated job to server:', err));
     }
 
@@ -750,18 +782,11 @@ class StorageService {
   public async deleteJobAsync(id: string): Promise<{ success: boolean; error?: string }> {
     if (!id) return { success: false, error: 'Missing job ID.' };
     try {
-      const requesterId = this.currentUser?.id || '';
-      const requesterEmail = this.currentUser?.email || '';
       const { res, data, isJson } = await this.fetchJsonWithRetry(
-        `/api/jobs/${encodeURIComponent(id)}?userId=${encodeURIComponent(requesterId)}`,
+        `/api/jobs/${encodeURIComponent(id)}`,
         {
           method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-            ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-          },
-          body: JSON.stringify({ requesterUserId: requesterId })
+          headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' })
         }
       );
       if (!res.ok) {
@@ -791,24 +816,21 @@ class StorageService {
     if (!id) return false;
     const cleanId = id.trim().toLowerCase();
     const targetJob = this.jobs.find(j => j.id && j.id.toLowerCase() === cleanId);
+    if (!targetJob) return false;
+    if (this.currentUser && this.currentUser.role !== 'admin' && targetJob.userId !== this.currentUser.id) {
+      return false;
+    }
     const initialLen = this.jobs.length;
     this.jobs = this.jobs.filter(j => j.id && j.id.toLowerCase() !== cleanId);
 
     if (this.jobs.length !== initialLen) {
       this.saveJobsToStorage();
 
-      // Delete from server database API
-      if (typeof window !== 'undefined' && targetJob) {
-        const requesterId = this.currentUser?.id || '';
-        const requesterEmail = this.currentUser?.email || '';
-        fetch(apiUrl(`/api/jobs/${encodeURIComponent(targetJob.id)}?userId=${encodeURIComponent(requesterId)}`), {
+      if (typeof window !== 'undefined') {
+        fetch(apiUrl(`/api/jobs/${encodeURIComponent(targetJob.id)}`), {
           method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(requesterId ? { 'x-gulfaro-user-id': requesterId } : {}),
-            ...(requesterEmail ? { 'x-gulfaro-user-email': requesterEmail } : {})
-          },
-          body: JSON.stringify({ requesterUserId: requesterId })
+          credentials: 'include',
+          headers: this.buildAuthHeaders({ 'Content-Type': 'application/json' })
         }).catch(err => console.warn('Could not sync deleted job to server:', err));
       }
 
@@ -902,41 +924,28 @@ class StorageService {
   }
 
   public async syncUsersWithServer(): Promise<User[]> {
+    const token = this.getAuthToken();
+    if (!token && !this.currentUser) {
+      return this.users;
+    }
     try {
-      const res = await fetch(apiUrl('/api/auth/users'));
+      const res = await fetch(apiUrl('/api/auth/me'), {
+        credentials: 'include',
+        headers: this.buildAuthHeaders()
+      });
       if (res.ok) {
-        const serverUsers: User[] = await res.json();
-        if (Array.isArray(serverUsers) && serverUsers.length > 0) {
-          const userMap = new Map<string, User>();
-          // Preserve local passwords
-          this.users.forEach(u => {
-            if (u && u.email) userMap.set(u.email.toLowerCase().trim(), u);
+        const data = await res.json();
+        if (data?.user?.id) {
+          this.setCurrentUser({
+            ...(this.currentUser || {}),
+            ...data.user
           });
-          serverUsers.forEach(u => {
-            if (u && u.email) {
-              const key = u.email.toLowerCase().trim();
-              const existing = userMap.get(key);
-              userMap.set(key, { ...u, password: existing?.password || (u as any).password });
-            }
-          });
-          this.users = Array.from(userMap.values());
-          this.saveUsersToStorage();
-
-          // Keep active session synced with canonical server user ID & verification state
-          if (this.currentUser?.email) {
-            const matchedServerUser = userMap.get(this.currentUser.email.toLowerCase().trim());
-            if (matchedServerUser) {
-              this.setCurrentUser({
-                ...this.currentUser,
-                ...matchedServerUser,
-                password: this.currentUser.password || matchedServerUser.password
-              });
-            }
-          }
         }
+      } else if (res.status === 401) {
+        this.logoutUser();
       }
     } catch (e) {
-      console.warn('[Gulfaro Storage] Failed to sync users with server database:', e);
+      console.warn('[Gulfaro Storage] Failed to refresh authenticated session from server:', e);
     }
     return this.users;
   }
@@ -944,8 +953,6 @@ class StorageService {
   public async loginUserAsync(email: string, password?: string, rememberMe = true): Promise<{ success: boolean; user?: User; error?: string }> {
     const inputEmail = (email || '').toLowerCase().trim();
     const inputPassword = (password || '').trim();
-
-    console.log('[Gulfaro Auth] Initiating login for normalized email:', inputEmail);
 
     if (!inputEmail.includes('@') && inputEmail !== 'admin' && inputEmail !== 'superadmin') {
       return {
@@ -961,24 +968,23 @@ class StorageService {
       };
     }
 
-    // 1. Try server-side authentication
     try {
-      console.log('[Gulfaro Auth] Attempting server /api/auth/login...');
       const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inputEmail, identifier: inputEmail, password: inputPassword })
+        body: JSON.stringify({ email: inputEmail, identifier: inputEmail, password: inputPassword, rememberMe })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success && data.user) {
-        console.log('[Gulfaro Auth] Server authentication successful for:', data.user.email);
+        if (data.token) {
+          this.setAuthToken(data.token);
+        }
         const authenticatedUser: User = {
-          ...data.user,
-          password: inputPassword
+          ...data.user
         };
 
-        // Update in localStorage 'gulfaro_users'
         let usersList: User[] = [];
         try {
           const raw = localStorage.getItem(STORAGE_KEY_GULFARO_USERS);
@@ -995,35 +1001,19 @@ class StorageService {
         this.users = usersList;
         this.saveUsersToStorage();
         this.setCurrentUser(authenticatedUser);
-        if (rememberMe) {
-          localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(authenticatedUser));
-        }
         return { success: true, user: authenticatedUser };
       }
 
-      // If server returned 401, 403, 429, or 503 - respect server decision strictly
-      if (res.status === 401 || res.status === 403 || res.status === 429 || res.status === 503) {
-        return {
-          success: false,
-          error: data.error || 'Authentication denied.'
-        };
-      }
-
-      // If server returned 404 Not Found, verify against local persistent storage before failing
-      if (res.status === 404) {
-        console.log('[Gulfaro Auth] User not found on server, searching localStorage gulfaro_users...');
-        return this.loginUser(inputEmail, inputPassword, rememberMe);
-      }
-
-      if (data && data.error) {
-        return { success: false, error: data.error };
-      }
-    } catch (networkErr) {
-      console.warn('[Gulfaro Auth] Network offline/failed, verifying in persistent localStorage:', networkErr);
-      return this.loginUser(inputEmail, inputPassword, rememberMe);
+      return {
+        success: false,
+        error: data?.error || 'Authentication failed. Please check your email and password.'
+      };
+    } catch {
+      return {
+        success: false,
+        error: 'Unable to reach the Gulfaro authentication server. Please try again.'
+      };
     }
-
-    return this.loginUser(inputEmail, inputPassword, rememberMe);
   }
 
   public loginUser(email: string, password?: string, rememberMe = true): { success: boolean; user?: User; error?: string } {
@@ -1125,9 +1115,11 @@ class StorageService {
       }
 
       if (data.user) {
+        if (data.token) {
+          this.setAuthToken(data.token);
+        }
         const mergedUser: User = {
-          ...data.user,
-          password: userData.password
+          ...data.user
         };
         const idx = this.users.findIndex(u => u.email.toLowerCase().trim() === emailNormalized);
         if (idx >= 0) {
@@ -1238,6 +1230,7 @@ class StorageService {
 
   public logoutUser(): void {
     this.currentUser = null;
+    this.setAuthToken(null);
     try {
       localStorage.removeItem(STORAGE_KEY_SESSION);
       localStorage.removeItem(STORAGE_KEY_USER);
@@ -1245,12 +1238,9 @@ class StorageService {
     } catch (e) {
       console.error(e);
     }
-  }
-
-  public switchDemoUser(role: 'job_seeker' | 'employer' | 'admin'): User {
-    const found = this.users.find(u => u.role === role) || DEMO_USERS[0];
-    this.setCurrentUser(found);
-    return found;
+    if (typeof window !== 'undefined') {
+      fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => {});
+    }
   }
 
   public registerCustomUser(userData: Omit<User, 'id' | 'createdAt'>): User {
@@ -1378,102 +1368,18 @@ class StorageService {
     return { ...this.adSenseConfig };
   }
 
-  // --- Employer Email Verification & Trust Badge Methods ---
+  // --- Verified Employer Trust Badge Methods ---
 
   public isEmployerVerified(job: JobAd): boolean {
     if (job.isEmployerVerified === true) return true;
-    if (job.userId) {
-      const u = this.users.find(usr => usr.id === job.userId);
-      if (u?.emailVerified) return true;
-    }
-    if (job.contactEmail) {
-      const u = this.users.find(usr => usr.email.toLowerCase() === job.contactEmail.toLowerCase());
-      if (u?.emailVerified) return true;
-    }
-    // Check known corporate emails / seed verified direct employers
-    const verifiedKnownEmails = [
-      'careers.site@albawani-contracting.example.com',
-      'hr@albawani-contracting.example.com',
-      'talent@fingulf-tech.example.com',
-      'careers@almana-group.example.com',
-      'drivers@gulfhorizon-kw.example.com',
-      'careers@oasistech-bh.example.com',
-      'operations@alkhadra-fm.example.com'
-    ];
-    if (job.contactEmail && verifiedKnownEmails.includes(job.contactEmail.toLowerCase())) {
+    if (job.userId && this.currentUser?.role === 'employer' && this.currentUser.id === job.userId) {
       return true;
     }
+    if (job.userId) {
+      const u = this.users.find(usr => usr.id === job.userId);
+      if (u && (u.role === 'employer' || u.role === 'admin' || u.emailVerified)) return true;
+    }
     return false;
-  }
-
-  public async sendEmployerVerificationAsync(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; code?: string }> {
-    try {
-      const res = await fetch(apiUrl('/api/auth/send-employer-verification'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, message: data.error || data.message || 'Failed to dispatch verification email.' };
-      }
-      return data;
-    } catch {
-      return { success: false, message: 'Could not connect to the verification server.' };
-    }
-  }
-
-  public async verifyEmployerEmailAsync(email: string, code: string): Promise<{ success: boolean; message?: string; error?: string; user?: User }> {
-    try {
-      const res = await fetch(apiUrl('/api/auth/verify-employer-email'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        return { success: false, error: data.error || 'Verification failed.' };
-      }
-
-      // Update local current user if this user is signed in
-      if (this.currentUser && this.currentUser.email.toLowerCase() === email.toLowerCase()) {
-        const updated: User = {
-          ...this.currentUser,
-          emailVerified: true,
-          emailVerifiedAt: new Date().toISOString()
-        };
-        this.setCurrentUser(updated);
-      }
-
-      // Update in users array
-      this.users = this.users.map(u => {
-        if (u.email.toLowerCase() === email.toLowerCase()) {
-          return { ...u, emailVerified: true, emailVerifiedAt: new Date().toISOString() };
-        }
-        return u;
-      });
-      this.saveUsersToStorage();
-
-      // Update in jobs array
-      this.jobs = this.jobs.map(j => {
-        if (
-          (j.userId && this.currentUser && j.userId === this.currentUser.id) ||
-          (j.contactEmail && j.contactEmail.toLowerCase() === email.toLowerCase())
-        ) {
-          return { ...j, isEmployerVerified: true };
-        }
-        return j;
-      });
-      this.saveJobsToStorage();
-
-      return {
-        success: true,
-        message: data.message,
-        user: data.user || this.currentUser
-      };
-    } catch {
-      return { success: false, error: 'Could not connect to the verification server.' };
-    }
   }
 
   /**

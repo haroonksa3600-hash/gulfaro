@@ -30,7 +30,7 @@ interface ManageJobsViewProps {
   currentUser: User | null;
   jobs: JobAd[];
   onEditJob: (job: JobAd) => void;
-  onDeleteJob: (jobId: string) => Promise<void> | void;
+  onDeleteJob: (jobId: string) => Promise<{ success: boolean; error?: string } | void> | void;
   onOpenPostJob: () => void;
   onSelectJob: (job: JobAd) => void;
   onNavigateHome: () => void;
@@ -49,28 +49,14 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired'>('all');
   const [jobToDelete, setJobToDelete] = useState<JobAd | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Filter jobs posted by the currently logged-in employer
+  // Filter strictly to jobs owned by the currently logged-in employer account
   const employerJobs = useMemo(() => {
     if (!currentUser) return [];
-
-    return jobs.filter(job => {
-      // Match by userId or company email / employer role
-      const matchesUser = job.userId === currentUser.id;
-      const matchesEmail = job.contactEmail && job.contactEmail.toLowerCase() === currentUser.email.toLowerCase();
-      const jobCompany = (job.company || '').toLowerCase();
-      const matchesCompany = currentUser.companyName && jobCompany === currentUser.companyName.toLowerCase();
-      
-      // If the current user is an employer with specific ID or email match
-      if (matchesUser || matchesEmail) return true;
-      if (currentUser.role === 'employer' && matchesCompany) return true;
-
-      // Fallback for demo users (e.g. user-emp-1 owns Al-Bawani jobs, user-emp-2 owns FinGulf)
-      if (currentUser.id === 'user-emp-1' && (job.company || '').includes('Al-Bawani')) return true;
-      if (currentUser.id === 'user-emp-2' && (job.company || '').includes('FinGulf')) return true;
-
-      return false;
-    });
+    if (currentUser.role === 'admin') return jobs;
+    if (currentUser.role !== 'employer') return [];
+    return jobs.filter(job => Boolean(job.userId) && job.userId === currentUser.id);
   }, [jobs, currentUser]);
 
   // Apply search query and status filter
@@ -109,9 +95,16 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
   const confirmDelete = async () => {
     if (!jobToDelete) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
-      await onDeleteJob(jobToDelete.id);
+      const result = await onDeleteJob(jobToDelete.id);
+      if (result && result.success === false) {
+        setDeleteError(result.error || 'Failed to delete this job post.');
+        return;
+      }
       setJobToDelete(null);
+    } catch {
+      setDeleteError('Failed to delete this job post. Please try again.');
     } finally {
       setIsDeleting(false);
     }
@@ -125,7 +118,13 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-              <span className="font-semibold text-slate-700">Employer Portal</span>
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                className="font-semibold text-slate-600 hover:text-teal-700 transition-colors"
+              >
+                Home
+              </button>
               <span>/</span>
               <span className="text-teal-700 font-bold">My Job Posts</span>
             </div>
@@ -416,7 +415,10 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
 
                       {/* DELETE Button */}
                       <button
-                        onClick={() => setJobToDelete(job)}
+                        onClick={() => {
+                          setDeleteError(null);
+                          setJobToDelete(job);
+                        }}
                         className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors shadow-2xs active:scale-95"
                         title="Delete this job advertisement"
                       >
@@ -464,6 +466,11 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
                 <p className="text-[11px] text-rose-600 font-medium mt-2">
                   Warning: Candidates will no longer be able to discover or contact you for this vacancy.
                 </p>
+                {deleteError && (
+                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mt-2 font-medium">
+                    {deleteError}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -471,7 +478,10 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setJobToDelete(null)}
+                onClick={() => {
+                  setDeleteError(null);
+                  setJobToDelete(null);
+                }}
                 disabled={isDeleting}
                 className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-colors"
               >
