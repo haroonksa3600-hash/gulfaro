@@ -59,7 +59,7 @@ export const HomepageEditorialSections: React.FC<HomepageEditorialSectionsProps>
         map.set(key, {
           company: job.company.trim(),
           countryName: GCC_COUNTRIES[job.country]?.name || job.country,
-          city: job.city,
+          city: job.city || '',
           activeCount: 1,
           verified
         });
@@ -109,7 +109,8 @@ export const HomepageEditorialSections: React.FC<HomepageEditorialSectionsProps>
                       <div className="min-w-0">
                         <h3 className="font-bold text-sm text-slate-900 truncate">{emp.company}</h3>
                         <p className="text-xs text-slate-500 truncate">
-                          {emp.city}, {emp.countryName}
+                          {emp.city?.trim() ? `${emp.city.trim()}, ` : ''}
+                          {emp.countryName}
                         </p>
                       </div>
                     </div>

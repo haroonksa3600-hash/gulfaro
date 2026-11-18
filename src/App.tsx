@@ -17,7 +17,7 @@ import {
 import { storageService } from './services/storage';
 import { fetchPublicPlatformConfig, PublicPlatformConfig } from './services/siteConfig';
 import { Navbar } from './components/Navbar';
-import { HeroSection, getCitiesForCountry, jobMatchesCityFilter } from './components/HeroSection';
+import { HeroSection, jobMatchesCityFilter } from './components/HeroSection';
 import { CountrySection } from './components/CountrySection';
 import { CategorySection } from './components/CategorySection';
 import { JobCard } from './components/JobCard';
@@ -239,9 +239,12 @@ export default function App() {
 
     if (selectedJob) {
       const countryName = GCC_COUNTRIES[selectedJob.country]?.name || 'GCC';
+      const locationLabel = selectedJob.city?.trim()
+        ? `${selectedJob.city.trim()}, ${countryName}`
+        : countryName;
       const active = isJobActiveAndUnexpired(selectedJob);
       applyRouteSeo({
-        title: `${selectedJob.title}${selectedJob.company ? ` – ${selectedJob.company}` : ''} (${selectedJob.city}, ${countryName}) | Gulfaro`,
+        title: `${selectedJob.title}${selectedJob.company ? ` – ${selectedJob.company}` : ''} (${locationLabel}) | Gulfaro`,
         description: (selectedJob.description || '').replace(/\s+/g, ' ').slice(0, 155),
         canonicalPath: `/job/${selectedJob.slug || selectedJob.id}`,
         robots: active ? 'index, follow' : 'noindex, follow',
@@ -913,7 +916,6 @@ export default function App() {
           selectedCountry={selectedCountry}
           onQuickCountrySelect={c => {
             setSelectedCountry(c);
-            setSelectedCity('');
           }}
           onNavigatePath={navigateTo}
           totalJobsCount={activeTotal}
@@ -1058,25 +1060,22 @@ export default function App() {
                   ))}
                 </select>
 
-                {selectedCountry !== 'all' && (
-                  <div className="pt-1">
-                    <label className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider mb-1">
-                      City
-                    </label>
-                    <select
-                      value={selectedCity}
-                      onChange={e => setSelectedCity(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs"
-                    >
-                      <option value="">All Cities</option>
-                      {getCitiesForCountry(selectedCountry)
-                        .filter(c => c !== 'All Cities')
-                        .map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+                <div className="pt-1">
+                  <label
+                    htmlFor="sidebar-city-input"
+                    className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider mb-1"
+                  >
+                    CITY / REGION
+                  </label>
+                  <input
+                    id="sidebar-city-input"
+                    type="text"
+                    value={selectedCity}
+                    onChange={e => setSelectedCity(e.target.value)}
+                    placeholder="Enter city or region"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-slate-50 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:bg-white"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2 pt-2 border-t border-slate-100">

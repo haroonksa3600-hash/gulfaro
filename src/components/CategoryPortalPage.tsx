@@ -46,10 +46,11 @@ export const CategoryPortalPage: React.FC<CategoryPortalPageProps> = ({
         if (searchInput.trim()) {
           const q = searchInput.toLowerCase();
           return (
-            job.title.toLowerCase().includes(q) ||
-            job.company.toLowerCase().includes(q) ||
-            job.city.toLowerCase().includes(q) ||
-            job.description.toLowerCase().includes(q)
+            (job.title || '').toLowerCase().includes(q) ||
+            (job.company || '').toLowerCase().includes(q) ||
+            (job.city || '').toLowerCase().includes(q) ||
+            (job.district || '').toLowerCase().includes(q) ||
+            (job.description || '').toLowerCase().includes(q)
           );
         }
         return true;

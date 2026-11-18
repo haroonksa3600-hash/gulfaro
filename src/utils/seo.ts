@@ -96,7 +96,7 @@ export function applyRouteSeo(meta: RouteSeoMetadata) {
 
 export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
   if (!isJobActiveAndUnexpired(job)) return null;
-  if (!job.title || !job.city || !job.description) return null;
+  if (!job.title || !job.description) return null;
 
   const countryInfo = GCC_COUNTRIES[job.country];
   const employmentMap: Record<string, string> = {
@@ -129,8 +129,8 @@ export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
       '@type': 'Place',
       address: {
         '@type': 'PostalAddress',
-        streetAddress: job.district || job.city,
-        addressLocality: job.city,
+        ...(job.district || job.city ? { streetAddress: job.district || job.city } : {}),
+        ...(job.city ? { addressLocality: job.city } : {}),
         addressCountry: countryInfo?.code || 'SA'
       }
     }

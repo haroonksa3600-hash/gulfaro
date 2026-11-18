@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GccCountry, JobAd } from '../types/job';
 import { PUBLIC_JOB_CATEGORIES } from '../data/gccDirectory';
 import { Search, ShieldCheck, BookOpen, ArrowRight, MapPin, ChevronDown } from 'lucide-react';
@@ -56,12 +56,12 @@ export function jobMatchesCityFilter(
   job: Pick<JobAd, 'city' | 'district'> & { location?: string },
   selectedCity?: string | null
 ): boolean {
-  const cleanSelected = String(selectedCity || '').trim();
-  if (!cleanSelected || cleanSelected === 'All Cities') return true;
+  const cleanSelected = String(selectedCity || '').trim().replace(/\s+/g, ' ');
+  if (!cleanSelected || cleanSelected.toLowerCase() === 'all cities') return true;
 
   const target = cleanSelected.toLowerCase();
-  const jobCity = (job.city || '').toLowerCase();
-  const jobLocation = (job.location || job.district || '').toLowerCase();
+  const jobCity = (job.city || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const jobLocation = (job.location || job.district || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
   const aliases = CITY_ALIASES[target] || [target];
   return aliases.some(
@@ -97,22 +97,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   const [country, setCountry] = useState<GccCountry | 'all'>(
     selectedCountry !== 'all' ? selectedCountry : 'saudi-arabia'
   );
-  const [selectedCity, setSelectedCity] = useState<string>('All Cities');
+  const [selectedCity, setSelectedCity] = useState<string>('');
   const [categorySlug, setCategorySlug] = useState('');
 
   useEffect(() => {
     if (selectedCountry !== 'all' && selectedCountry !== country) {
       setCountry(selectedCountry);
-      setSelectedCity('All Cities');
     }
   }, [selectedCountry]);
-
-  const availableCities = useMemo(() => getCitiesForCountry(country), [country]);
 
   const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value as GccCountry | 'all';
     setCountry(val);
-    setSelectedCity('All Cities');
     onQuickCountrySelect(val);
   };
 
@@ -121,7 +117,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     onSearch({
       query,
       country,
-      city: selectedCity,
+      city: selectedCity.trim(),
       category: categorySlug
     });
   };
@@ -211,26 +207,21 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           {/* 3. CITY / REGION */}
           <div className="md:col-span-2 lg:col-span-2">
             <label
-              htmlFor="hero-city-select"
+              htmlFor="hero-city-input"
               className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1"
             >
-              City / Region
+              CITY / REGION
             </label>
             <div className="relative flex items-center">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-              <select
-                id="hero-city-select"
+              <input
+                id="hero-city-input"
+                type="text"
                 value={selectedCity}
                 onChange={e => setSelectedCity(e.target.value)}
-                className="w-full appearance-none pl-9 pr-9 py-2.5 bg-white border border-slate-300 focus:border-teal-600 rounded-lg text-sm text-slate-900 font-medium focus:outline-none"
-              >
-                {availableCities.map(cityOption => (
-                  <option key={cityOption} value={cityOption}>
-                    {cityOption === 'All Cities' ? 'All Cities / Regions' : cityOption}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 pointer-events-none" />
+                placeholder="Enter city or region"
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 focus:border-teal-600 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              />
             </div>
           </div>
 

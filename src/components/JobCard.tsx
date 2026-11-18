@@ -83,7 +83,8 @@ export const JobCard: React.FC<JobCardProps> = ({
             {countryInfo?.flag}
           </span>
           <span className="font-semibold text-slate-800">
-            {job.city}, {countryInfo?.name}
+            {job.city?.trim() ? `${job.city.trim()}, ` : ''}
+            {countryInfo?.name}
           </span>
           <span aria-hidden="true" className="text-slate-300">·</span>
           <span className="text-slate-500">

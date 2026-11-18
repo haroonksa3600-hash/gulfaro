@@ -1,5 +1,29 @@
 [
   {
+    "actorType": "employer",
+    "actorId": "usr-1795009566083-ptvq",
+    "emailOrUsername": "citytest_1795009565979@example.com",
+    "event": "register",
+    "success": true,
+    "ip": "127.0.0.1",
+    "userAgent": "node",
+    "suspicious": false,
+    "id": "auth-1795009566153-276281",
+    "createdAt": "2026-11-18T13:46:06.153Z"
+  },
+  {
+    "actorType": "employer",
+    "actorId": "usr-1795009552764-36o5",
+    "emailOrUsername": "citytest_1795009552642@example.com",
+    "event": "register",
+    "success": true,
+    "ip": "127.0.0.1",
+    "userAgent": "node",
+    "suspicious": false,
+    "id": "auth-1795009552844-53b757",
+    "createdAt": "2026-11-18T13:45:52.844Z"
+  },
+  {
     "actorType": "admin",
     "actorId": "sa-owner-1",
     "emailOrUsername": "Haroon555",

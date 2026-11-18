@@ -1094,13 +1094,15 @@ export function createSuperAdminRouter(): express.Router {
       const randNum = Math.floor(1000 + Math.random() * 9000);
       const id = adData.id || `GF-${randNum}`;
       const cleanTitle = adData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '').slice(0, 45);
-      const cleanCity = (adData.city || 'gcc').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const normalizedCity = String(adData.city || '').trim();
+      const cleanCity = normalizedCity.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') || 'gcc';
       const now = new Date();
       const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
       const newJob = {
         ...adData,
         id,
+        city: normalizedCity,
         slug: `${cleanTitle}-${cleanCity}-${randNum}`,
         postedAt: now.toISOString(),
         expiresAt: adData.expiresAt || expiry.toISOString(),
@@ -1147,6 +1149,10 @@ export function createSuperAdminRouter(): express.Router {
         nextJob.expiresAt = new Date(base + days * 86400000).toISOString();
         if (nextJob.status === 'expired') nextJob.status = 'active';
         delete updates.extendDays;
+      }
+
+      if (updates.city !== undefined) {
+        updates.city = String(updates.city || '').trim();
       }
 
       const finalJob = { ...nextJob, ...updates };

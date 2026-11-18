@@ -96,7 +96,10 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   <div>
                     <div className="text-xs text-slate-500 mb-1 flex items-center gap-2">
                       <span>{GCC_COUNTRIES[job.country]?.flag}</span>
-                      <span>{job.city}, {GCC_COUNTRIES[job.country]?.name}</span>
+                      <span>
+                        {job.city?.trim() ? `${job.city.trim()}, ` : ''}
+                        {GCC_COUNTRIES[job.country]?.name}
+                      </span>
                       <span>·</span>
                       <span className="font-semibold text-slate-700">{job.company}</span>
                     </div>

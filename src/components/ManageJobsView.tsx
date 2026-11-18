@@ -71,9 +71,9 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
       // Search term
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
-        const inTitle = job.title.toLowerCase().includes(q);
+        const inTitle = (job.title || '').toLowerCase().includes(q);
         const inId = (job.id || '').toLowerCase().includes(q);
-        const inCity = job.city.toLowerCase().includes(q);
+        const inCity = (job.city || '').toLowerCase().includes(q);
         const inCat = (job.category || '').toLowerCase().includes(q);
         if (!inTitle && !inId && !inCity && !inCat) return false;
       }
@@ -307,7 +307,10 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
                     <div className="col-span-5 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
                         <span>{countryObj?.flag || '🌐'}</span>
-                        <span className="font-semibold text-slate-700">{job.city}, {countryObj?.name || job.country}</span>
+                        <span className="font-semibold text-slate-700">
+                          {job.city?.trim() ? `${job.city.trim()}, ` : ''}
+                          {countryObj?.name || job.country}
+                        </span>
                         <span className="text-slate-300">·</span>
                         <span className="font-mono text-slate-400 font-semibold text-[11px]">{job.id}</span>
                         {job.isFeatured && (
@@ -460,7 +463,9 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
                 <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
                   <p className="font-bold text-slate-800">{jobToDelete.title}</p>
                   <p className="text-slate-500 text-[11px] mt-0.5">
-                    Ref ID: <span className="font-mono">{jobToDelete.id}</span> · {jobToDelete.city}, {GCC_COUNTRIES[jobToDelete.country as GccCountry]?.name}
+                    Ref ID: <span className="font-mono">{jobToDelete.id}</span> ·{' '}
+                    {jobToDelete.city?.trim() ? `${jobToDelete.city.trim()}, ` : ''}
+                    {GCC_COUNTRIES[jobToDelete.country as GccCountry]?.name}
                   </p>
                 </div>
                 <p className="text-[11px] text-rose-600 font-medium mt-2">

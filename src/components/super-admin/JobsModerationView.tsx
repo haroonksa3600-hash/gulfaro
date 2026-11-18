@@ -46,7 +46,7 @@ export const JobsModerationView: React.FC<JobsModerationViewProps> = ({ onToast 
     title: '',
     company: '',
     country: 'saudi-arabia',
-    city: 'Riyadh',
+    city: '',
     category: 'engineering',
     salaryMin: 5000,
     salaryMax: 9000,
@@ -348,7 +348,7 @@ export const JobsModerationView: React.FC<JobsModerationViewProps> = ({ onToast 
                         </div>
                       </td>
                       <td className="py-3 px-3 text-slate-600">
-                        {countryInfo ? `${countryInfo.flag} ${j.city}` : j.city}
+                        {countryInfo ? `${countryInfo.flag} ${j.city || countryInfo.name}` : (j.city || j.country)}
                       </td>
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-1">
@@ -525,12 +525,12 @@ export const JobsModerationView: React.FC<JobsModerationViewProps> = ({ onToast 
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">City</label>
+                  <label className="block font-semibold text-slate-700 mb-1">CITY / REGION</label>
                   <input
                     type="text"
-                    required
                     value={jobForm.city}
                     onChange={e => setJobForm({ ...jobForm, city: e.target.value })}
+                    placeholder="Enter city or region"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                   />
                 </div>

@@ -75,7 +75,7 @@ export const JobCompactRow: React.FC<JobCompactRowProps> = ({
         </div>
 
         <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
-          <span className="text-slate-700 font-medium">{job.city}</span>
+          <span className="text-slate-700 font-medium">{job.city?.trim() || countryInfo?.name}</span>
           <span>·</span>
           <span className="inline-flex items-center gap-1">
             <span>{job.company}</span>

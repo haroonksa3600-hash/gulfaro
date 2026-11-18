@@ -8,6 +8,7 @@ import {
 } from '../data/gccDirectory';
 import { jobMatchesCategoryFilter } from '../data/categories';
 import { findArticleBySlug } from '../data/careerArticles';
+import { jobMatchesCityFilter } from './HeroSection';
 import { JobCard } from './JobCard';
 import { AdBanner } from './AdBanner';
 import {
@@ -54,17 +55,18 @@ export const CountryPortalPage: React.FC<CountryPortalPageProps> = ({
     return activeJobs
       .filter(job => {
         if (job.country !== selectedMeta.id) return false;
-        if (cityFilter && job.city.toLowerCase() !== cityFilter.toLowerCase()) return false;
+        if (cityFilter.trim() && !jobMatchesCityFilter(job, cityFilter)) return false;
         if (categorySlugFilter && !jobMatchesCategoryFilter(job, categorySlugFilter)) {
           return false;
         }
         if (searchInput.trim()) {
           const q = searchInput.toLowerCase();
           const hit =
-            job.title.toLowerCase().includes(q) ||
-            job.company.toLowerCase().includes(q) ||
-            job.city.toLowerCase().includes(q) ||
-            job.description.toLowerCase().includes(q);
+            (job.title || '').toLowerCase().includes(q) ||
+            (job.company || '').toLowerCase().includes(q) ||
+            (job.city || '').toLowerCase().includes(q) ||
+            (job.district || '').toLowerCase().includes(q) ||
+            (job.description || '').toLowerCase().includes(q);
           if (!hit) return false;
         }
         return true;
@@ -207,17 +209,17 @@ export const CountryPortalPage: React.FC<CountryPortalPageProps> = ({
                 />
               </div>
 
-              <select
-                value={cityFilter}
-                onChange={e => setCityFilter(e.target.value)}
-                aria-label="Filter by City"
-                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-teal-600"
-              >
-                <option value="">All Cities in {selectedMeta.shortName}</option>
-                {selectedMeta.majorHubs.map(city => (
-                  <option key={city} value={city}>{city}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={cityFilter}
+                  onChange={e => setCityFilter(e.target.value)}
+                  aria-label="CITY / REGION"
+                  placeholder="Enter city or region"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:bg-white"
+                />
+              </div>
 
               <select
                 value={categorySlugFilter}

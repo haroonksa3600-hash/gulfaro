@@ -87,8 +87,11 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
   const canonicalShareUrl = getPublicJobUrl();
   const companySuffix = job.company ? ` – ${job.company}` : '';
   const companyLocationClause = job.company ? ` at ${job.company}` : '';
+  const locationLabel = job.city?.trim()
+    ? `${job.city.trim()}, ${countryInfo?.name || 'GCC'}`
+    : countryInfo?.name || 'GCC';
   const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(
-    `${job.title}${companySuffix} (${job.city}, ${countryInfo?.name || 'GCC'})\nApply directly on Gulfaro:\n${canonicalShareUrl}`
+    `${job.title}${companySuffix} (${locationLabel})\nApply directly on Gulfaro:\n${canonicalShareUrl}`
   )}`;
 
   const handleShare = async () => {
@@ -96,7 +99,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
       try {
         await navigator.share({
           title: `${job.title}${companySuffix}`,
-          text: `View vacancy on Gulfaro: ${job.title}${companyLocationClause} (${job.city}, ${countryInfo?.name || 'GCC'})`,
+          text: `View vacancy on Gulfaro: ${job.title}${companyLocationClause} (${locationLabel})`,
           url: canonicalShareUrl
         });
         setCopiedLink(true);
@@ -238,7 +241,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                     {countryInfo?.flag}
                   </span>
                   <span className="font-bold text-slate-800">
-                    {job.city}, {countryInfo?.name}
+                    {locationLabel}
                   </span>
                   {job.district && <span className="text-slate-400">· {job.district}</span>}
                   {job.isFeatured && <span className="text-teal-700 font-bold">· Featured</span>}
@@ -596,7 +599,8 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                     >
                       <h3 className="font-bold text-slate-900 line-clamp-1">{sim.title}</h3>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        {sim.city} · {sim.company}
+                        {sim.city?.trim() || GCC_COUNTRIES[sim.country]?.name}
+                        {sim.company ? ` · ${sim.company}` : ''}
                       </p>
                     </div>
                   ))}

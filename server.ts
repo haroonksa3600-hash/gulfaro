@@ -58,7 +58,11 @@ import {
   findCategoryMetaBySlug,
   isJobActiveAndUnexpired
 } from './src/data/gccDirectory';
-import { isValidJobCategoryId, resolveJobCategoryId } from './shared/jobCategories';
+import {
+  isValidJobCategoryId,
+  jobMatchesCategoryFilter,
+  resolveJobCategoryId
+} from './shared/jobCategories';
 import { CAREER_ARTICLES } from './src/data/careerArticles';
 import { GCC_COUNTRIES } from './src/types/job';
 
@@ -1003,15 +1007,72 @@ async function startServer() {
     }));
   }
 
-  // Get all published jobs (respects hideAllPublicJobs & filters out hidden/rejected jobs publicly)
-  app.get('/api/jobs', async (_req: Request, res: Response) => {
+  const CITY_SEARCH_ALIASES: Record<string, string[]> = {
+    makkah: ['makkah', 'mecca'],
+    mecca: ['makkah', 'mecca'],
+    madinah: ['madinah', 'medina'],
+    medina: ['madinah', 'medina'],
+    ahmadi: ['ahmadi', 'al ahmadi']
+  };
+
+  function jobMatchesCitySearchQuery(job: any, rawCityQuery: string): boolean {
+    const cleanSelected = rawCityQuery.trim().replace(/\s+/g, ' ');
+    if (!cleanSelected || cleanSelected.toLowerCase() === 'all cities') return true;
+    const target = cleanSelected.toLowerCase();
+    const jobCity = String(job?.city || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const jobLocation = String(job?.location || job?.district || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const aliases = CITY_SEARCH_ALIASES[target] || [target];
+    return aliases.some(term => jobCity === term || jobCity.includes(term) || jobLocation.includes(term));
+  }
+
+  function formatJobLocationLabel(city?: string | null, countryName?: string | null): string {
+    const cleanCity = String(city || '').trim();
+    const cleanCountry = String(countryName || '').trim() || 'GCC';
+    return cleanCity ? `${cleanCity}, ${cleanCountry}` : cleanCountry;
+  }
+
+  // Get all published jobs (supports optional city/country/category/q search params; respects hideAllPublicJobs & filters out hidden/rejected jobs publicly)
+  app.get('/api/jobs', async (req: Request, res: Response) => {
     try {
       const settings = await getSiteSettings();
       if (settings.emergency.hideAllPublicJobs || settings.emergency.emergencyShutdown) {
         return res.json([]);
       }
       const allJobs = await getJobs();
-      const visibleJobs = allJobs.filter(j => j.status !== 'hidden' && j.status !== 'rejected');
+      let visibleJobs = allJobs.filter(j => j.status !== 'hidden' && j.status !== 'rejected');
+
+      const cityParam = String(req.query.city || req.query.location || '').trim();
+      const countryParam = String(req.query.country || '').trim().toLowerCase();
+      const categoryParam = String(req.query.category || '').trim();
+      const qParam = String(req.query.q || req.query.query || '').trim().toLowerCase();
+
+      if (countryParam && countryParam !== 'all') {
+        visibleJobs = visibleJobs.filter(j => String(j.country || '').toLowerCase() === countryParam);
+      }
+      if (cityParam) {
+        visibleJobs = visibleJobs.filter(j => jobMatchesCitySearchQuery(j, cityParam));
+      }
+      if (categoryParam && categoryParam.toLowerCase() !== 'all') {
+        visibleJobs = visibleJobs.filter(j => jobMatchesCategoryFilter(j, categoryParam));
+      }
+      if (qParam) {
+        visibleJobs = visibleJobs.filter(j => {
+          const hay = [
+            j.title,
+            j.description,
+            j.company,
+            j.city,
+            j.district,
+            j.subcategory,
+            ...(Array.isArray(j.requirements) ? j.requirements : [])
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return hay.includes(qParam);
+        });
+      }
+
       const enriched = await enrichJobsVerifiedStatus(visibleJobs);
       res.json(enriched);
     } catch {
@@ -1196,8 +1257,9 @@ async function startServer() {
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)+/g, '')
           .slice(0, 45) || 'job';
+      const normalizedCity = String(adData.city || '').trim();
       const cleanCity =
-        (adData.city || '')
+        normalizedCity
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)+/g, '') || 'gcc';
@@ -1235,6 +1297,7 @@ async function startServer() {
         id,
         slug,
         userId: actor.id,
+        city: normalizedCity,
         company: String(adData.company || '').trim(),
         contactPerson: String(adData.contactPerson || '').trim(),
         experienceLevel: String(adData.experienceLevel || '').trim(),
@@ -1364,6 +1427,7 @@ async function startServer() {
         updates.contactEmail = '';
       }
 
+      if (updates.city !== undefined) updates.city = String(updates.city || '').trim();
       if (updates.company !== undefined) updates.company = String(updates.company || '').trim();
       if (updates.contactPerson !== undefined) updates.contactPerson = String(updates.contactPerson || '').trim();
       if (updates.experienceLevel !== undefined) updates.experienceLevel = String(updates.experienceLevel || '').trim();
@@ -1530,6 +1594,7 @@ async function startServer() {
       const active = isJobActiveAndUnexpired(matchedJob as any);
       const countryInfo = GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES];
       const countryName = countryInfo?.name || matchedJob.country;
+      const locationLabel = formatJobLocationLabel(matchedJob.city, countryName);
       const slugOrId = matchedJob.slug || matchedJob.id;
       const jobCanonicalUrl = `${frontendOrigin}/job/${encodeURIComponent(slugOrId)}`;
       const ogImage = `${frontendOrigin}/pwa-512x512.png`;
@@ -1537,10 +1602,10 @@ async function startServer() {
       const summaryDesc =
         cleanDesc.length > 160
           ? `${cleanDesc.slice(0, 157)}...`
-          : cleanDesc || `${matchedJob.title} at ${matchedJob.company} in ${matchedJob.city}, ${countryName}.`;
+          : cleanDesc || `${matchedJob.title}${matchedJob.company ? ` at ${matchedJob.company}` : ''} in ${locationLabel}.`;
       const pageTitle = active
-        ? `${matchedJob.title} – ${matchedJob.company} (${matchedJob.city}, ${countryName}) | Gulfaro`
-        : `${matchedJob.title} (Expired) – ${matchedJob.company} | Gulfaro`;
+        ? `${matchedJob.title}${matchedJob.company ? ` – ${matchedJob.company}` : ''} (${locationLabel}) | Gulfaro`
+        : `${matchedJob.title} (Expired)${matchedJob.company ? ` – ${matchedJob.company}` : ''} | Gulfaro`;
 
       const html = `<!doctype html>
 <html lang="en">
@@ -1568,7 +1633,7 @@ async function startServer() {
   <body>
     <main style="font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 16px;">
       <h1>${escapeHtml(matchedJob.title)}</h1>
-      <p><strong>${escapeHtml(matchedJob.company)}</strong> · ${escapeHtml(matchedJob.city)}, ${escapeHtml(countryName)}</p>
+      <p>${matchedJob.company ? `<strong>${escapeHtml(matchedJob.company)}</strong> · ` : ''}${escapeHtml(locationLabel)}</p>
       <p>${escapeHtml(summaryDesc)}</p>
       <p><a href="${escapeHtml(jobCanonicalUrl)}">View Full Vacancy on Gulfaro</a></p>
     </main>
@@ -1811,6 +1876,7 @@ ${xmlItems}
         if (matchedJob && matchedJob.status !== 'hidden' && matchedJob.status !== 'rejected') {
           const active = isJobActiveAndUnexpired(matchedJob as any);
           const countryName = GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES]?.name || matchedJob.country;
+          const locationLabel = formatJobLocationLabel(matchedJob.city, countryName);
           const cleanDesc = (matchedJob.description || '').replace(/\s+/g, ' ').trim();
           const summaryDesc = cleanDesc.length > 155 ? `${cleanDesc.slice(0, 152)}...` : cleanDesc;
           const employmentMap: Record<string, string> = {
@@ -1823,7 +1889,7 @@ ${xmlItems}
           };
 
           const jobPostingJsonLd =
-            active && matchedJob.title && matchedJob.city && matchedJob.description
+            active && matchedJob.title && matchedJob.description
               ? {
                   '@context': 'https://schema.org/',
                   '@type': 'JobPosting',
@@ -1845,8 +1911,10 @@ ${xmlItems}
                     '@type': 'Place',
                     address: {
                       '@type': 'PostalAddress',
-                      streetAddress: matchedJob.district || matchedJob.city,
-                      addressLocality: matchedJob.city,
+                      ...(matchedJob.district || matchedJob.city
+                        ? { streetAddress: matchedJob.district || matchedJob.city }
+                        : {}),
+                      ...(matchedJob.city ? { addressLocality: matchedJob.city } : {}),
                       addressCountry: GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES]?.code || 'SA'
                     }
                   },
@@ -1877,10 +1945,10 @@ ${xmlItems}
           const companyAtClause = matchedJob.company ? ` at ${matchedJob.company}` : '';
           template = applyServerSeoTags(template, {
             title: active
-              ? `${matchedJob.title}${companyTitleSuffix} (${matchedJob.city}, ${countryName}) | Gulfaro`
+              ? `${matchedJob.title}${companyTitleSuffix} (${locationLabel}) | Gulfaro`
               : `${matchedJob.title} (Expired)${companyTitleSuffix} | Gulfaro`,
             description:
-              summaryDesc || `${matchedJob.title} opportunity${companyAtClause} in ${matchedJob.city}, ${countryName}.`,
+              summaryDesc || `${matchedJob.title} opportunity${companyAtClause} in ${locationLabel}.`,
             canonicalPath: `/job/${matchedJob.slug || matchedJob.id}`,
             robots: active ? 'index, follow' : 'noindex, follow',
             ogType: 'article',

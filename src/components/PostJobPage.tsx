@@ -14,7 +14,6 @@ import {
   isValidJobCategoryId,
   resolveJobCategoryId
 } from '../data/categories';
-import { getCitiesForCountry } from './HeroSection';
 import { storageService } from '../services/storage';
 import {
   validateJobFieldsForExternalLinks,
@@ -175,9 +174,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
   // Section 4: Job Location
   const [country, setCountry] = useState<GccCountry>(defaultCountry);
-  const [city, setCity] = useState(
-    currentUser?.city || GCC_COUNTRIES[defaultCountry].topCities[0]
-  );
+  const [city, setCity] = useState('');
   const [workMode, setWorkMode] = useState<'on-site' | 'remote' | 'hybrid'>('on-site');
 
   // Section 5: Salary & Requirements (Required Experience & Education are optional)
@@ -210,7 +207,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
     setContactEmail(currentUser?.email || '');
     setContactPhone(currentUser?.phone || '');
     setCountry(uCountry);
-    setCity(currentUser?.city || GCC_COUNTRIES[uCountry].topCities[0]);
+    setCity('');
     setWorkMode('on-site');
     setMonthlySalary('');
     setCurrency(GCC_COUNTRIES[uCountry].currencyCode);
@@ -259,7 +256,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       setContactEmail(editingJob.contactEmail || '');
       setContactPhone(editingJob.contactPhone || '');
       setCountry(editingJob.country || 'saudi-arabia');
-      setCity(editingJob.city || GCC_COUNTRIES[editingJob.country || 'saudi-arabia'].topCities[0]);
+      setCity(editingJob.city || '');
       setWorkMode(editingJob.workMode || 'on-site');
       setMonthlySalary(formatInitialSalary(editingJob));
       setCurrency(editingJob.currency || GCC_COUNTRIES[editingJob.country || 'saudi-arabia'].currencyCode);
@@ -274,21 +271,11 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
   const countryInfo = useMemo(() => GCC_COUNTRIES[country], [country]);
   const availableSubcategories = useMemo(() => getSubcategoriesForCategory(category), [category]);
-  const availableCities = useMemo(() => {
-    const baseCities = getCitiesForCountry(country).filter(c => c !== 'All Cities');
-    if (city && !baseCities.includes(city)) {
-      return [...baseCities, city];
-    }
-    return baseCities;
-  }, [country, city]);
 
   const handleCountryChange = (newCountry: GccCountry) => {
     const info = GCC_COUNTRIES[newCountry];
-    const newCities = getCitiesForCountry(newCountry).filter(c => c !== 'All Cities');
     setCountry(newCountry);
     setCurrency(info.currencyCode);
-    setCity(newCities[0] || info.topCities[0]);
-    clearFieldError('city');
     if (!contactPhone.trim() || contactPhone.trim().startsWith('+')) {
       const hasOnlyCode = Object.values(GCC_COUNTRIES).some(
         c => contactPhone.trim() === c.phoneCode
@@ -354,9 +341,6 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
       if (!contactPhone.trim() || contactPhone.replace(/\D/g, '').length < 6) {
         missingErrors.contactPhone = 'Please enter a valid Contact Phone Number.';
       }
-    }
-    if (!city.trim()) {
-      missingErrors.city = 'City is required.';
     }
     if (!monthlySalary.trim()) {
       missingErrors.monthlySalary = 'Monthly Salary is required (or enter Negotiable).';
@@ -550,7 +534,8 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
               </h1>
               <p className="text-sm text-slate-600">
                 {publishedJob.company ? `${publishedJob.company} · ` : ''}
-                {publishedJob.city}, {GCC_COUNTRIES[publishedJob.country]?.name} · Ref{' '}
+                {publishedJob.city ? `${publishedJob.city}, ` : ''}
+                {GCC_COUNTRIES[publishedJob.country]?.name} · Ref{' '}
                 <span className="font-mono font-semibold text-slate-800">{publishedJob.id}</span>
               </p>
             </div>
@@ -1001,7 +986,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                   <span>Job Location</span>
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Select the GCC country, city, and work arrangement
+                  Select the GCC country, optional city or region, and work arrangement
                 </p>
               </div>
             </div>
@@ -1029,27 +1014,21 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
 
               <div>
                 <label htmlFor="job-city" className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                  City / Region *
+                  CITY / REGION
                 </label>
                 <div className="relative flex items-center">
                   <MapPin className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-                  <select
+                  <input
                     id="job-city"
-                    required
+                    type="text"
                     value={city}
                     onChange={e => {
                       setCity(e.target.value);
                       clearFieldError('city');
                     }}
+                    placeholder="Enter city or region (e.g. Riyadh, Jubail, NEOM)"
                     className={getInputClass('city', 'pl-9')}
-                  >
-                    <option value="">Select City / Region</option>
-                    {availableCities.map(c => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 {renderFieldError('city')}
               </div>
