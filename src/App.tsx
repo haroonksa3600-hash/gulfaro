@@ -18,8 +18,6 @@ import { storageService } from './services/storage';
 import { fetchPublicPlatformConfig, PublicPlatformConfig } from './services/siteConfig';
 import { Navbar } from './components/Navbar';
 import { HeroSection, jobMatchesCityFilter } from './components/HeroSection';
-import { CountrySection } from './components/CountrySection';
-import { CategorySection } from './components/CategorySection';
 import { JobCard } from './components/JobCard';
 import { JobCompactRow } from './components/JobCompactRow';
 import { JobDetailView } from './components/JobDetailView';
@@ -921,35 +919,6 @@ export default function App() {
           totalJobsCount={activeTotal}
           heroTitle={publicConfig?.cms?.heroTitle}
           heroSubtitle={publicConfig?.cms?.heroSubtitle}
-        />
-
-        {/* Browse Jobs by GCC Country */}
-        <CountrySection
-          jobs={jobs}
-          selectedCountry={selectedCountry}
-          onSelectCountry={c => {
-            setSelectedCountry(c);
-            setSelectedCity('');
-          }}
-          onSelectCity={(country, city) => {
-            setSelectedCountry(country);
-            setSelectedCity(city);
-            const feed = document.getElementById('jobs-directory');
-            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenCountryPage={slug => navigateTo(slug ? `/country/${slug}` : '/countries')}
-        />
-
-        {/* Browse Jobs by 30 Employment Categories */}
-        <CategorySection
-          jobs={jobs}
-          selectedCategory={selectedCategory}
-          onSelectCategory={slug => {
-            setSelectedCategory(slug);
-            const feed = document.getElementById('jobs-directory');
-            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenCategoryPage={slug => navigateTo(slug ? `/category/${slug}` : '/categories')}
         />
 
         {/* Separated Leaderboard Advertisement */}
