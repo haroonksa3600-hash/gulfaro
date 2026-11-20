@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GccCountry, GCC_COUNTRIES, User } from '../types/job';
 import { storageService, DEMO_USERS } from '../services/storage';
 import gccMeetingImg from '../assets/images/gcc_recruitment_meeting_1793920057434.jpg';
@@ -47,6 +47,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [role, setRole] = useState<'job_seeker' | 'employer'>(initialRole);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  useEffect(() => {
+    setRole(initialRole);
+  }, [initialRole]);
 
   // Sign In State (ONLY 2 fields: Email Address, Password)
   const [loginEmail, setLoginEmail] = useState('');

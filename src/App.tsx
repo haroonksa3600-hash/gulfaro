@@ -81,6 +81,7 @@ export default function App() {
   // Navigation & View State
   const [activeTab, setActiveTab] = useState<'jobs' | 'dashboard' | 'safety' | 'countries' | 'auth' | 'my-jobs'>('jobs');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authRole, setAuthRole] = useState<'job_seeker' | 'employer'>('job_seeker');
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
@@ -435,12 +436,17 @@ export default function App() {
     setCurrentUser(null);
     setEditingJob(null);
     setAuthMode('login');
+    setAuthRole('employer');
     setActiveTab('auth');
     navigateTo('/');
   };
 
-  const handleOpenAuth = (mode: 'login' | 'signup') => {
+  const handleOpenAuth = (
+    mode: 'login' | 'signup',
+    preferredRole: 'job_seeker' | 'employer' = 'job_seeker'
+  ) => {
     setAuthMode(mode);
+    setAuthRole(preferredRole);
     setActiveTab('auth');
     setSelectedJob(null);
     setJobNotFoundSlug(null);
@@ -792,6 +798,7 @@ export default function App() {
       return (
         <AuthPage
           initialMode={authMode}
+          initialRole={authRole}
           onAuthSuccess={handleAuthSuccess}
           onCancel={() => setActiveTab('jobs')}
           onNavigateToForgotPassword={() => navigateTo('/forgot-password')}
@@ -1254,19 +1261,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* Real Featured Employers, Career Advice, CV & Interview Resources, Employer CTA */}
-        <HomepageEditorialSections
-          jobs={jobs}
-          currentUser={currentUser}
-          onNavigatePath={navigateTo}
-          onFilterByCompany={companyName => {
-            setSearchQuery(companyName);
-            const feed = document.getElementById('jobs-directory');
-            if (feed) feed.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenPostJob={handleOpenPostJob}
-          onOpenAuth={handleOpenAuth}
-        />
+        {/* CV Writing & Interview Preparation Resources */}
+        <HomepageEditorialSections onNavigatePath={navigateTo} />
       </div>
     );
   };
