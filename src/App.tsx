@@ -50,7 +50,8 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Zap,
-  Sparkles
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 
 export default function App() {
@@ -103,6 +104,7 @@ export default function App() {
   const [filterUrgentOnly, setFilterUrgentOnly] = useState(false);
   const [filterFeaturedOnly, setFilterFeaturedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'salary-high' | 'urgent' | 'expiring'>('recent');
+  const [jobBatchIndex, setJobBatchIndex] = useState(0);
 
   const extractJobSlugOrId = (pathnameArg?: string): string | null => {
     if (typeof window === 'undefined') return null;
@@ -484,6 +486,7 @@ export default function App() {
     setSelectedCountry(filters.country);
     setSelectedCity(normalizedCity);
     setSelectedCategory(filters.category);
+    setJobBatchIndex(0);
     setActiveTab('jobs');
     setSelectedJob(null);
     setJobNotFoundSlug(null);
@@ -505,6 +508,7 @@ export default function App() {
     setFilterUrgentOnly(false);
     setFilterFeaturedOnly(false);
     setSortBy('recent');
+    setJobBatchIndex(0);
   };
 
   const handleSelectJob = (job: JobAd) => {
@@ -596,6 +600,39 @@ export default function App() {
     searchQuery,
     sortBy
   ]);
+
+  useEffect(() => {
+    setJobBatchIndex(0);
+  }, [
+    searchQuery,
+    selectedCountry,
+    selectedCity,
+    selectedCategory,
+    filterEmploymentType,
+    filterIqama,
+    filterExperience,
+    filterMinSalary,
+    filterUrgentOnly,
+    filterFeaturedOnly,
+    sortBy
+  ]);
+
+  const JOBS_PER_BATCH = 5;
+  const totalBatches = Math.ceil(filteredJobs.length / JOBS_PER_BATCH);
+  const safeBatchIndex = totalBatches > 0 ? Math.min(jobBatchIndex, totalBatches - 1) : 0;
+  const batchStart = safeBatchIndex * JOBS_PER_BATCH;
+  const batchEnd = batchStart + JOBS_PER_BATCH;
+  const paginatedJobs = filteredJobs.slice(batchStart, batchEnd);
+  const hasMoreJobBatches = batchEnd < filteredJobs.length;
+
+  const handleNextJobBatch = () => {
+    if (!hasMoreJobBatches) return;
+    setJobBatchIndex(prev => prev + 1);
+    if (typeof document !== 'undefined') {
+      const feed = document.getElementById('jobs-directory');
+      if (feed) feed.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const activeFiltersCount = [
     selectedCountry !== 'all',
@@ -1162,39 +1199,56 @@ export default function App() {
                     Reset All Filters
                   </button>
                 </div>
-              ) : viewMode === 'cards' ? (
-                <div className="grid grid-cols-1 gap-4">
-                  {filteredJobs.map((job, idx) => (
-                    <React.Fragment key={job.id}>
-                      <JobCard
-                        job={job}
-                        isSaved={savedJobIds.includes(job.id)}
-                        onToggleSave={handleToggleSaveJob}
-                        onSelectJob={handleSelectJob}
-                      />
-                      {idx === 3 && <AdBanner type="in-feed" />}
-                    </React.Fragment>
-                  ))}
-                </div>
               ) : (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="bg-slate-100 px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between border-b border-slate-200">
-                    <span>Date & Country</span>
-                    <span>Vacancy & Employer</span>
-                    <span>Actions</span>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {filteredJobs.map(job => (
-                      <JobCompactRow
-                        key={job.id}
-                        job={job}
-                        isSaved={savedJobIds.includes(job.id)}
-                        onToggleSave={handleToggleSaveJob}
-                        onSelectJob={handleSelectJob}
-                      />
-                    ))}
-                  </div>
-                </div>
+                <>
+                  {viewMode === 'cards' ? (
+                    <div className="grid grid-cols-1 gap-4">
+                      {paginatedJobs.map((job, idx) => (
+                        <React.Fragment key={job.id}>
+                          <JobCard
+                            job={job}
+                            isSaved={savedJobIds.includes(job.id)}
+                            onToggleSave={handleToggleSaveJob}
+                            onSelectJob={handleSelectJob}
+                          />
+                          {idx === 3 && <AdBanner type="in-feed" />}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                      <div className="bg-slate-100 px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between border-b border-slate-200">
+                        <span>Date & Country</span>
+                        <span>Vacancy & Employer</span>
+                        <span>Actions</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {paginatedJobs.map(job => (
+                          <JobCompactRow
+                            key={job.id}
+                            job={job}
+                            isSaved={savedJobIds.includes(job.id)}
+                            onToggleSave={handleToggleSaveJob}
+                            onSelectJob={handleSelectJob}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {hasMoreJobBatches && (
+                    <div className="pt-2 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={handleNextJobBatch}
+                        className="group w-full sm:w-auto min-w-[220px] px-8 py-3 bg-slate-900 hover:bg-teal-600 active:scale-[0.98] text-white font-bold text-sm rounded-xl border border-slate-800 hover:border-teal-600 shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2"
+                      >
+                        <span>More</span>
+                        <ArrowRight className="w-4 h-4 text-teal-400 group-hover:text-white transition-colors" />
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
