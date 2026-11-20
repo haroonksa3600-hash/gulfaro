@@ -40,13 +40,18 @@ export const JobNotFoundView: React.FC<JobNotFoundViewProps> = ({
       
       {/* Top back navigation */}
       <div className="mb-6">
-        <button
-          onClick={onBrowseAll}
+        <a
+          href="/"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            e.preventDefault();
+            onBrowseAll();
+          }}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-teal-700 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-2xs transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to All Vacancies</span>
-        </button>
+          <span>Back to Homepage</span>
+        </a>
       </div>
 
       {/* Main Not Found Card */}
@@ -102,15 +107,20 @@ export const JobNotFoundView: React.FC<JobNotFoundViewProps> = ({
             </form>
           </div>
 
-          {/* Primary Action Button */}
+          {/* Primary Action Link */}
           <div className="pt-2">
-            <button
-              onClick={onBrowseAll}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-sm transition-all active:scale-[0.98]"
+            <a
+              href="/"
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                e.preventDefault();
+                onBrowseAll();
+              }}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-teal-600 text-white font-bold text-sm rounded-xl shadow-sm transition-all active:scale-[0.98]"
             >
               <Briefcase className="w-4 h-4 text-teal-400" />
-              <span>Browse All Active Classifieds</span>
-            </button>
+              <span>Go to Homepage &amp; Browse All Jobs</span>
+            </a>
           </div>
 
           {/* GCC Country Shortcuts */}

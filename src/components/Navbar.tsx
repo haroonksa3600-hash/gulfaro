@@ -100,8 +100,14 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         {/* Zone 1: Clean Brand Wordmark Only */}
         <div className="flex items-center shrink-0">
-          <button
-            onClick={() => navigateClean('/')}
+          <a
+            href="/"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/');
+              }
+            }}
             className="flex items-center focus:outline-none focus:ring-2 focus:ring-teal-500 rounded-lg py-1"
             title="Gulfaro – GCC Job Portal"
             aria-label="Gulfaro Homepage"
@@ -111,55 +117,85 @@ export const Navbar: React.FC<NavbarProps> = ({
               alt="Gulfaro"
               className="h-8 sm:h-9 w-auto object-contain shrink-0"
             />
-          </button>
+          </a>
         </div>
 
         {/* Zone 2: Single-Line Navigation Links (5 core routes) */}
         <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-300" aria-label="Main Navigation">
-          <button
-            onClick={() => navigateClean('/')}
+          <a
+            href="/"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/');
+              }
+            }}
             className={`whitespace-nowrap shrink-0 transition-colors hover:text-white ${
               isHomeActive ? 'text-teal-400 font-semibold' : ''
             }`}
           >
             Jobs
-          </button>
+          </a>
 
-          <button
-            onClick={() => navigateClean('/countries')}
+          <a
+            href="/countries"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/countries');
+              }
+            }}
             className={`whitespace-nowrap shrink-0 transition-colors hover:text-white ${
               isCountriesActive ? 'text-teal-400 font-semibold' : ''
             }`}
           >
             GCC Countries
-          </button>
+          </a>
 
-          <button
-            onClick={() => navigateClean('/categories')}
+          <a
+            href="/categories"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/categories');
+              }
+            }}
             className={`whitespace-nowrap shrink-0 transition-colors hover:text-white ${
               isCategoriesActive ? 'text-teal-400 font-semibold' : ''
             }`}
           >
             Categories
-          </button>
+          </a>
 
-          <button
-            onClick={() => navigateClean('/career-advice')}
+          <a
+            href="/career-advice"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/career-advice');
+              }
+            }}
             className={`whitespace-nowrap shrink-0 transition-colors hover:text-white ${
               isCareerActive ? 'text-teal-400 font-semibold' : ''
             }`}
           >
             Career Advice
-          </button>
+          </a>
 
-          <button
-            onClick={() => navigateClean('/about')}
+          <a
+            href="/about"
+            onClick={e => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                navigateClean('/about');
+              }
+            }}
             className={`whitespace-nowrap shrink-0 transition-colors hover:text-white ${
               isAboutActive ? 'text-teal-400 font-semibold' : ''
             }`}
           >
             About
-          </button>
+          </a>
         </nav>
 
         {/* Zone 3: Single Primary Action & Account / Menu Toggle */}
@@ -388,12 +424,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               { label: 'GCC Country Portals', path: '/countries', icon: <Globe className="w-4 h-4" /> },
               { label: 'All 30 Job Categories', path: '/categories', icon: <LayoutGrid className="w-4 h-4" /> },
               { label: 'Career Advice & Guides', path: '/career-advice', icon: <BookOpen className="w-4 h-4" /> },
-              { label: 'About Gulfaro', path: '/about', icon: <Info className="w-4 h-4" /> },
+              { label: 'About Us', path: '/about', icon: <Info className="w-4 h-4" /> },
               { label: 'Contact Us', path: '/contact', icon: <Mail className="w-4 h-4" /> }
             ].map(item => (
-              <button
+              <a
                 key={item.path}
-                onClick={() => navigateClean(item.path)}
+                href={item.path}
+                onClick={e => {
+                  if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    navigateClean(item.path);
+                  }
+                }}
                 className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-200 hover:bg-slate-900"
               >
                 <span className="flex items-center gap-3">
@@ -401,7 +443,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span>{item.label}</span>
                 </span>
                 <ChevronRight className="w-4 h-4 text-slate-500" />
-              </button>
+              </a>
             ))}
 
             {currentUser && (

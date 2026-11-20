@@ -44,19 +44,58 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-    <!-- Schema.org WebSite JSON-LD -->
-    <script type="application/ld+json">
+    <!-- Schema.org WebSite & Organization JSON-LD -->
+    <script id="gulfaro-route-jsonld" type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "Gulfaro",
-      "alternateName": "Gulfaro GCC Jobs",
-      "url": "https://www.gulfaro.net",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": "https://www.gulfaro.net/?q={search_term_string}",
-        "query-input": "required name=search_term_string"
-      }
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://www.gulfaro.net/#organization",
+          "name": "Gulfaro",
+          "alternateName": "Gulfaro GCC Jobs",
+          "url": "https://www.gulfaro.net",
+          "description": "Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://www.gulfaro.net/pwa-512x512.png",
+            "width": 512,
+            "height": 512
+          },
+          "email": "admingulfaro@gmail.com",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "admingulfaro@gmail.com",
+            "url": "https://www.gulfaro.net/contact",
+            "areaServed": ["SA", "AE", "QA", "KW", "BH", "OM"],
+            "availableLanguage": ["English"]
+          },
+          "areaServed": [
+            { "@type": "Country", "name": "Saudi Arabia" },
+            { "@type": "Country", "name": "United Arab Emirates" },
+            { "@type": "Country", "name": "Qatar" },
+            { "@type": "Country", "name": "Kuwait" },
+            { "@type": "Country", "name": "Bahrain" },
+            { "@type": "Country", "name": "Oman" }
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://www.gulfaro.net/#website",
+          "url": "https://www.gulfaro.net",
+          "name": "Gulfaro",
+          "alternateName": "Gulfaro GCC Jobs",
+          "publisher": {
+            "@id": "https://www.gulfaro.net/#organization"
+          },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://www.gulfaro.net/?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
     }
     </script>
     <script src="/gulfaro-config.js"></script>

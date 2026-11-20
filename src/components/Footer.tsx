@@ -51,70 +51,86 @@ export const Footer: React.FC<FooterProps> = ({
     }));
   };
 
+  const handleSpaLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      onNavigatePath(path);
+    }
+  };
+
   const countryLinks = (
     <ul className="space-y-2">
-      {GCC_COUNTRY_DIRECTORY.map(c => (
-        <li key={c.id}>
-          <button
-            type="button"
-            onClick={() => onNavigatePath(`/country/${c.slug}`)}
-            className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
-          >
-            {c.name} Jobs
-          </button>
-        </li>
-      ))}
+      {GCC_COUNTRY_DIRECTORY.map(c => {
+        const href = `/country/${c.slug}`;
+        return (
+          <li key={c.id}>
+            <a
+              href={href}
+              onClick={e => handleSpaLinkClick(e, href)}
+              className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
+            >
+              {c.name} Jobs
+            </a>
+          </li>
+        );
+      })}
     </ul>
   );
 
   const categoryLinks = (
     <ul className="space-y-2">
-      {PUBLIC_JOB_CATEGORIES.slice(0, 6).map(cat => (
-        <li key={cat.slug}>
-          <button
-            type="button"
-            onClick={() => onNavigatePath(`/category/${cat.slug}`)}
-            className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
-          >
-            {cat.name}
-          </button>
-        </li>
-      ))}
+      {PUBLIC_JOB_CATEGORIES.slice(0, 6).map(cat => {
+        const href = `/category/${cat.slug}`;
+        return (
+          <li key={cat.slug}>
+            <a
+              href={href}
+              onClick={e => handleSpaLinkClick(e, href)}
+              className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
+            >
+              {cat.name}
+            </a>
+          </li>
+        );
+      })}
       <li className="pt-1">
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/categories')}
+        <a
+          href="/categories"
+          onClick={e => handleSpaLinkClick(e, '/categories')}
           className="text-[13px] text-teal-400 hover:text-teal-300 font-semibold transition-colors text-left inline-flex items-center gap-1 py-0.5 cursor-pointer"
         >
           <span>View All 30 Categories</span>
           <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-        </button>
+        </a>
       </li>
     </ul>
   );
 
   const careerLinks = (
     <ul className="space-y-2">
-      {CAREER_ARTICLES.slice(0, 5).map(art => (
-        <li key={art.slug}>
-          <button
-            type="button"
-            onClick={() => onNavigatePath(`/career-advice/${art.slug}`)}
-            className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
-          >
-            {art.title}
-          </button>
-        </li>
-      ))}
+      {CAREER_ARTICLES.slice(0, 5).map(art => {
+        const href = `/career-advice/${art.slug}`;
+        return (
+          <li key={art.slug}>
+            <a
+              href={href}
+              onClick={e => handleSpaLinkClick(e, href)}
+              className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
+            >
+              {art.title}
+            </a>
+          </li>
+        );
+      })}
       <li className="pt-1">
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/career-advice')}
+        <a
+          href="/career-advice"
+          onClick={e => handleSpaLinkClick(e, '/career-advice')}
           className="text-[13px] text-teal-400 hover:text-teal-300 font-semibold transition-colors text-left inline-flex items-center gap-1 py-0.5 cursor-pointer"
         >
           <span>All Career Articles</span>
           <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-        </button>
+        </a>
       </li>
     </ul>
   );
@@ -122,58 +138,58 @@ export const Footer: React.FC<FooterProps> = ({
   const legalLinks = (
     <ul className="space-y-2">
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/about')}
+        <a
+          href="/about"
+          onClick={e => handleSpaLinkClick(e, '/about')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
-          About Gulfaro
-        </button>
+          About Us
+        </a>
       </li>
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/contact')}
+        <a
+          href="/contact"
+          onClick={e => handleSpaLinkClick(e, '/contact')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
           Contact Us
-        </button>
+        </a>
       </li>
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/privacy-policy')}
+        <a
+          href="/privacy-policy"
+          onClick={e => handleSpaLinkClick(e, '/privacy-policy')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
           Privacy Policy
-        </button>
+        </a>
       </li>
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/terms')}
+        <a
+          href="/terms"
+          onClick={e => handleSpaLinkClick(e, '/terms')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
-          Terms and Conditions
-        </button>
+          Terms &amp; Conditions
+        </a>
       </li>
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/disclaimer')}
+        <a
+          href="/disclaimer"
+          onClick={e => handleSpaLinkClick(e, '/disclaimer')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
           Disclaimer
-        </button>
+        </a>
       </li>
       <li>
-        <button
-          type="button"
-          onClick={() => onNavigatePath('/cookie-policy')}
+        <a
+          href="/cookie-policy"
+          onClick={e => handleSpaLinkClick(e, '/cookie-policy')}
           className="text-[13px] text-slate-300 hover:text-teal-300 transition-colors text-left leading-snug py-0.5 block w-full cursor-pointer"
         >
           Cookie Policy
-        </button>
+        </a>
       </li>
       <li className="pt-1">
         <button
@@ -190,9 +206,9 @@ export const Footer: React.FC<FooterProps> = ({
 
   const brandBlock = (
     <div className="space-y-4">
-      <button
-        type="button"
-        onClick={() => onNavigatePath('/')}
+      <a
+        href="/"
+        onClick={e => handleSpaLinkClick(e, '/')}
         className="text-left focus:outline-none hover:opacity-90 transition-opacity inline-flex items-center cursor-pointer"
         aria-label="Gulfaro Homepage"
       >
@@ -201,7 +217,7 @@ export const Footer: React.FC<FooterProps> = ({
           alt="Gulfaro"
           className="h-8 w-auto object-contain"
         />
-      </button>
+      </a>
 
       <p className="text-[13px] text-slate-300/90 leading-relaxed max-w-md">
         {descriptionText}
@@ -210,6 +226,7 @@ export const Footer: React.FC<FooterProps> = ({
       <div className="pt-1">
         <a
           href={`mailto:${contactEmail}`}
+          aria-label={`Email Gulfaro support at ${contactEmail}`}
           className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-teal-500/60 text-slate-200 hover:text-teal-300 transition-colors text-xs sm:text-[13px] font-medium"
         >
           <Mail className="w-4 h-4 text-teal-400 shrink-0" />
@@ -301,14 +318,14 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Column 5: Public Trust & Legal Pages */}
           <div className="space-y-3.5">
             <h3 className="font-bold text-white text-xs uppercase tracking-wider pb-2.5 border-b border-slate-800/80">
-              Company & Legal
+              Company &amp; Legal
             </h3>
             {legalLinks}
           </div>
         </div>
       </div>
 
-      {/* Bottom Copyright & Quick Legal Links */}
+      {/* Bottom Copyright & Always-Visible Quick Legal Links */}
       <div className="border-t border-slate-800/80 bg-slate-950 px-4 sm:px-6 py-5">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
           <p className="text-center sm:text-left leading-relaxed">{copyrightText}</p>
@@ -316,40 +333,59 @@ export const Footer: React.FC<FooterProps> = ({
             aria-label="Footer legal links"
             className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3 gap-y-1.5"
           >
-            <button
-              type="button"
-              onClick={() => {
-                onSelectCountry('all');
-                onNavigatePath('/');
+            <a
+              href="/"
+              onClick={e => {
+                if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                  e.preventDefault();
+                  onSelectCountry('all');
+                  onNavigatePath('/');
+                }
               }}
               className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
             >
               All GCC Jobs
-            </button>
+            </a>
             <span aria-hidden="true" className="text-slate-700">·</span>
-            <button
-              type="button"
-              onClick={() => onNavigatePath('/privacy-policy')}
+            <a
+              href="/about"
+              onClick={e => handleSpaLinkClick(e, '/about')}
               className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
             >
-              Privacy
-            </button>
+              About Us
+            </a>
             <span aria-hidden="true" className="text-slate-700">·</span>
-            <button
-              type="button"
-              onClick={() => onNavigatePath('/terms')}
+            <a
+              href="/contact"
+              onClick={e => handleSpaLinkClick(e, '/contact')}
               className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
             >
-              Terms
-            </button>
+              Contact Us
+            </a>
             <span aria-hidden="true" className="text-slate-700">·</span>
-            <button
-              type="button"
-              onClick={() => onNavigatePath('/cookie-policy')}
+            <a
+              href="/terms"
+              onClick={e => handleSpaLinkClick(e, '/terms')}
+              className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
+            >
+              Terms &amp; Conditions
+            </a>
+            <span aria-hidden="true" className="text-slate-700">·</span>
+            <a
+              href="/privacy-policy"
+              onClick={e => handleSpaLinkClick(e, '/privacy-policy')}
+              className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
+            >
+              Privacy Policy
+            </a>
+            <span aria-hidden="true" className="text-slate-700">·</span>
+            <a
+              href="/cookie-policy"
+              onClick={e => handleSpaLinkClick(e, '/cookie-policy')}
               className="hover:text-teal-300 transition-colors py-0.5 cursor-pointer"
             >
               Cookies
-            </button>
+            </a>
           </nav>
         </div>
       </div>

@@ -1,0 +1,87 @@
+# Gulfaro
+
+> Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across Saudi Arabia, the United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman, alongside original GCC career advice and direct employer email and telephone contact.
+
+Gulfaro provides free public access to direct-employer vacancies across all 6 GCC nations and 30 employment categories, with no application fees or third-party redirects. Official support contact: admingulfaro@gmail.com.
+
+## Main Pages
+- [Gulfaro Homepage](https://www.gulfaro.net/): Browse active GCC job vacancies and search by keyword, country, city, or category
+- [Homepage Markdown Edition](https://www.gulfaro.net/index.md): Machine-readable Markdown representation of the Gulfaro homepage
+- [GCC Country Job Portals](https://www.gulfaro.net/countries): Regional hiring hubs, major cities, and labor authorities across all 6 GCC countries
+- [All 30 Job Categories](https://www.gulfaro.net/categories): Complete directory of Gulf industries and employment sectors
+- [GCC Career Advice & Guides](https://www.gulfaro.net/career-advice): Practical articles on CVs, interviews, and GCC employment contracts
+
+## Jobs by GCC Country
+- [Saudi Arabia Jobs](https://www.gulfaro.net/country/saudi-arabia): Jobs in Saudi Arabia — Riyadh, Jeddah, Dammam & Eastern Province
+- [United Arab Emirates Jobs](https://www.gulfaro.net/country/uae): Jobs in the United Arab Emirates — Dubai, Abu Dhabi & Sharjah
+- [Qatar Jobs](https://www.gulfaro.net/country/qatar): Jobs in Qatar — Doha, Lusail, Al Wakrah & Industrial Cities
+- [Kuwait Jobs](https://www.gulfaro.net/country/kuwait): Jobs in Kuwait — Kuwait City, Al Ahmadi, Hawalli & Salmiya
+- [Bahrain Jobs](https://www.gulfaro.net/country/bahrain): Jobs in Bahrain — Manama, Seef District, Muharraq & Riffa
+- [Oman Jobs](https://www.gulfaro.net/country/oman): Jobs in Oman — Muscat, Sohar, Salalah & Duqm
+
+## Active Job Listings
+- [Senior Civil Site Engineer – High-Rise & Infrastructure](https://www.gulfaro.net/job/senior-civil-engineer-riyadh-metro-infrastructure-901): Riyadh, Saudi Arabia
+- [Senior Full-Stack Developer (React 19 & Node.js / TypeScript)](https://www.gulfaro.net/job/full-stack-react-node-developer-dubai-fintech-902): Dubai, United Arab Emirates
+- [Senior Financial Accountant – GTA Tax & ERP Specialist](https://www.gulfaro.net/job/vat-senior-accountant-doha-trading-group-903): Doha, Qatar
+- [Heavy Truck & Trailer Drivers – KOC Approved Contractors](https://www.gulfaro.net/job/heavy-equipment-driver-kuwait-oil-sector-904): Al Ahmadi, Kuwait
+- [Staff Nurses (ICU / ER / Pediatric) – Valid SCFHS License](https://www.gulfaro.net/job/scfhs-registered-staff-nurse-jeddah-hospital-905): Jeddah, Saudi Arabia
+- [B2B Corporate Sales Executive – Enterprise Software & Cloud](https://www.gulfaro.net/job/b2b-corporate-sales-executive-manama-bahrain-906): Manama, Bahrain
+- [Senior HVAC & Central Chiller Maintenance Technicians](https://www.gulfaro.net/job/hvac-chiller-technician-muscat-oman-907): Muscat, Oman
+- [Specialty Coffee Head Barista & Latte Art Specialist](https://www.gulfaro.net/job/specialty-coffee-barista-dammam-khobar-908): Khobar, Saudi Arabia
+- [Human Resources & Government Relations Officer (PRO / Muqeem / Qiwa)](https://www.gulfaro.net/job/bilingual-hr-officer-qiwa-muqeem-riyadh-909): Riyadh, Saudi Arabia
+- [IGCSE & A-Level Mathematics Teacher (British Curriculum)](https://www.gulfaro.net/job/igcse-mathematics-teacher-international-school-dubai-910): Dubai, United Arab Emirates
+- [Drilling Fluids / Mud Engineer – Onshore Oil Rig Operations](https://www.gulfaro.net/job/drilling-fluids-mud-engineer-dammam-aramco-vendor-911): Dammam, Saudi Arabia
+- [Customer Service Representative (Bilingual Arabic & English)](https://www.gulfaro.net/job/bilingual-call-center-agent-abu-dhabi-912): Abu Dhabi, United Arab Emirates
+
+## Job Categories
+- [Accounting & Finance](https://www.gulfaro.net/category/accounting-finance): Financial accounting, audit, tax/VAT, treasury, and financial management roles across the GCC
+- [Administration & Office Support](https://www.gulfaro.net/category/administration-office-support): Executive assistants, office managers, document controllers, PRO coordinators, and administrative support
+- [Engineering](https://www.gulfaro.net/category/engineering): Civil, mechanical, electrical, structural, QA/QC, HSE, and project engineering positions
+- [Construction & Building](https://www.gulfaro.net/category/construction-building): Site supervision, quantity surveying, MEP installation, and skilled construction trades
+- [Information Technology](https://www.gulfaro.net/category/information-technology): Software engineering, cloud infrastructure, cybersecurity, ERP systems, and IT support
+- [Sales & Business Development](https://www.gulfaro.net/category/sales-business-development): B2B corporate sales, enterprise account management, and commercial growth leadership
+- [Marketing & Advertising](https://www.gulfaro.net/category/marketing-advertising): Digital marketing, performance campaigns, brand strategy, and communications
+- [Human Resources](https://www.gulfaro.net/category/human-resources): Talent acquisition, HR operations, government relations (Qiwa/MOHRE/Muqeem), and payroll
+- [Healthcare & Medical](https://www.gulfaro.net/category/healthcare-medical): Physicians, registered nurses, pharmacists, allied health specialists, and medical administrators
+- [Education & Training](https://www.gulfaro.net/category/education-training): School teachers, university lecturers, academic coordinators, and vocational trainers
+- [Hospitality & Tourism](https://www.gulfaro.net/category/hospitality-tourism): Hotel operations, front office, guest relations, housekeeping, and travel management
+- [Restaurant & Food Services](https://www.gulfaro.net/category/restaurant-food-services): Executive chefs, kitchen staff, specialty baristas, restaurant managers, and catering teams
+- [Customer Service & Call Center](https://www.gulfaro.net/category/customer-service-call-center): Bilingual customer support, client relations, and contact center specialists
+- [Driving & Transportation](https://www.gulfaro.net/category/driving-transportation): Heavy truck drivers, logistics fleet operators, executive chauffeurs, and dispatch personnel
+- [Logistics & Supply Chain](https://www.gulfaro.net/category/logistics-supply-chain): Freight forwarding, customs clearance, warehouse operations, and fleet coordination
+- [Security & Safety](https://www.gulfaro.net/category/security-safety): HSE officers, NEBOSH safety specialists, fire prevention, and site security guards
+- [Oil, Gas & Energy](https://www.gulfaro.net/category/oil-gas-energy): Upstream drilling, refinery operations, petrochemicals, pipeline integrity, and energy utilities
+- [Manufacturing & Production](https://www.gulfaro.net/category/manufacturing-production): Plant operations, CNC machining, industrial maintenance, and production line supervision
+- [Retail & Supermarket](https://www.gulfaro.net/category/retail-supermarket): Store managers, cashiers, merchandisers, inventory clerks, and showroom specialists
+- [Cleaning & Maintenance](https://www.gulfaro.net/category/cleaning-maintenance): Building maintenance technicians, HVAC servicing, janitorial teams, and facilities upkeep
+- [Electrical & Mechanical](https://www.gulfaro.net/category/electrical-mechanical): Industrial electricians, MEP technicians, HVAC chiller specialists, and millwrights
+- [Architecture & Interior Design](https://www.gulfaro.net/category/architecture-interior-design): Architects, BIM specialists, interior designers, 3D visualizers, and fit-out leads
+- [Legal & Compliance](https://www.gulfaro.net/category/legal-compliance): Corporate legal counsel, contract managers, regulatory compliance, and governance officers
+- [Real Estate & Property Management](https://www.gulfaro.net/category/real-estate-property-management): Property managers, leasing consultants, facilities coordinators, and real estate brokers
+- [Procurement & Purchasing](https://www.gulfaro.net/category/procurement-purchasing): Procurement engineers, vendor managers, buyers, and material expediting specialists
+- [Quality Control & Assurance](https://www.gulfaro.net/category/quality-control-assurance): QA/QC inspectors, laboratory analysts, ISO compliance auditors, and quality engineers
+- [Media, Design & Creative](https://www.gulfaro.net/category/media-design-creative): Graphic designers, UI/UX specialists, video producers, copywriters, and creative directors
+- [Telecommunications](https://www.gulfaro.net/category/telecommunications): Telecom network engineers, fiber optic technicians, RF planners, and NOC specialists
+- [Agriculture & Farming](https://www.gulfaro.net/category/agriculture-farming): Agronomists, landscape supervisors, greenhouse managers, and irrigation specialists
+- [Other Jobs](https://www.gulfaro.net/category/other-jobs): Specialized GCC employment roles across emerging and cross-functional domains
+
+## Career Advice & Guides
+- [How to Find a Job in Saudi Arabia](https://www.gulfaro.net/career-advice/how-to-find-a-job-in-saudi-arabia): Roadmap for roles in Riyadh, Jeddah, Dammam, and across Saudi Arabia
+- [How to Prepare a Professional CV](https://www.gulfaro.net/career-advice/how-to-prepare-a-professional-cv): Structure a clean, ATS-readable CV tailored for GCC hiring managers
+- [Common Interview Questions and Answers](https://www.gulfaro.net/career-advice/common-interview-questions-and-answers): Guidance on behavioral, technical, and relocation interview questions
+- [Job Search Tips for GCC Countries](https://www.gulfaro.net/career-advice/job-search-tips-for-gcc-countries): Proven job search habits across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman
+- [Understanding Employment Contracts](https://www.gulfaro.net/career-advice/understanding-employment-contracts): Key clauses to review before signing a Gulf offer letter or labor contract
+- [Professional Skills Employers Look For](https://www.gulfaro.net/career-advice/professional-skills-employers-look-for): Technical competencies, safety credentials, and communication skills valued in the GCC
+- [How to Prepare for a Job Interview in the UAE](https://www.gulfaro.net/career-advice/how-to-prepare-for-a-job-interview-in-the-uae): Practical interview tips for Dubai, Abu Dhabi, and the Northern Emirates
+
+## Company, Legal & Contact
+- [About Us](https://www.gulfaro.net/about): Gulfaro mission, direct hiring standards, and Frequently Asked Questions
+- [Contact Us](https://www.gulfaro.net/contact): Official support desk (admingulfaro@gmail.com) and inquiry form
+- [Terms & Conditions](https://www.gulfaro.net/terms): Platform rules and strict ban on candidate recruitment fees
+- [Privacy Policy](https://www.gulfaro.net/privacy-policy): Data protection, regional GCC compliance, and cookie disclosures
+- [Disclaimer](https://www.gulfaro.net/disclaimer): Independent employment portal and verification notices
+- [Cookie Policy](https://www.gulfaro.net/cookie-policy): Essential storage and third-party advertising cookie preferences
+
+## Optional
+- [XML Sitemap](https://www.gulfaro.net/sitemap.xml): Live XML index of public pages and active job listings
+- [Robots Policy](https://www.gulfaro.net/robots.txt): Crawler access rules and content signals

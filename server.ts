@@ -65,6 +65,13 @@ import {
 } from './shared/jobCategories';
 import { CAREER_ARTICLES } from './src/data/careerArticles';
 import { GCC_COUNTRIES } from './src/types/job';
+import {
+  DISCOVERY_LINK_HEADER,
+  prefersMarkdown,
+  buildLlmsTxt,
+  buildHomepageMarkdown
+} from './server/llmsMarkdown';
+import { createGulfaroMcpHandlers } from './server/mcpServer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -182,8 +189,23 @@ async function startServer() {
   // Required behind Render / Cloud Run HTTPS reverse proxies
   app.set('trust proxy', 1);
 
-  // Express CORS middleware allowing Hostinger production domain & local preview
+  // Express CORS middleware allowing Hostinger production domain & local preview, plus read-only MCP CORS
   app.use((req: Request, res: Response, next: NextFunction) => {
+    const cleanReqPath = req.path.replace(/\/+$/, '') || '/';
+    if (cleanReqPath === '/mcp' || cleanReqPath === '/.well-known/mcp/server-card.json') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id'
+      );
+      res.setHeader('Access-Control-Expose-Headers', 'MCP-Protocol-Version');
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+      }
+      return next();
+    }
+
     const origin = req.headers.origin;
     if (typeof origin === 'string' && isAllowedCorsOrigin(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
@@ -1507,6 +1529,98 @@ async function startServer() {
       .replace(/'/g, '&apos;');
   }
 
+  function buildServerOrganizationNode(
+    origin: string,
+    settings?: { cms?: { footerContactEmail?: string; contactUsEmail?: string; footerDescription?: string } }
+  ) {
+    const contactEmail =
+      String(settings?.cms?.contactUsEmail || settings?.cms?.footerContactEmail || 'admingulfaro@gmail.com').trim() ||
+      'admingulfaro@gmail.com';
+    const orgDescription =
+      String(settings?.cms?.footerDescription || '').trim() ||
+      'Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.';
+
+    return {
+      '@type': 'Organization',
+      '@id': `${origin}/#organization`,
+      name: 'Gulfaro',
+      alternateName: 'Gulfaro GCC Jobs',
+      url: origin,
+      description: orgDescription,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${origin}/pwa-512x512.png`,
+        width: 512,
+        height: 512
+      },
+      email: contactEmail,
+      contactPoint: {
+        '@type': 'ContactPoint',
+        contactType: 'customer support',
+        email: contactEmail,
+        url: `${origin}/contact`,
+        areaServed: ['SA', 'AE', 'QA', 'KW', 'BH', 'OM'],
+        availableLanguage: ['English']
+      },
+      areaServed: [
+        { '@type': 'Country', name: 'Saudi Arabia' },
+        { '@type': 'Country', name: 'United Arab Emirates' },
+        { '@type': 'Country', name: 'Qatar' },
+        { '@type': 'Country', name: 'Kuwait' },
+        { '@type': 'Country', name: 'Bahrain' },
+        { '@type': 'Country', name: 'Oman' }
+      ]
+    };
+  }
+
+  function buildServerWebSiteNode(origin: string) {
+    return {
+      '@type': 'WebSite',
+      '@id': `${origin}/#website`,
+      url: origin,
+      name: 'Gulfaro',
+      alternateName: 'Gulfaro GCC Jobs',
+      publisher: {
+        '@id': `${origin}/#organization`
+      },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${origin}/?q={search_term_string}`,
+        'query-input': 'required name=search_term_string'
+      }
+    };
+  }
+
+  function buildServerBreadcrumbListNode(
+    origin: string,
+    items: Array<{ name: string; path: string }>
+  ) {
+    return {
+      '@type': 'BreadcrumbList',
+      itemListElement: items.map((item, idx) => ({
+        '@type': 'ListItem',
+        position: idx + 1,
+        name: item.name,
+        item: `${origin}${item.path.startsWith('/') ? item.path : `/${item.path}`}`
+      }))
+    };
+  }
+
+  function buildServerSeoGraph(
+    origin: string,
+    extraNodes: Array<Record<string, any> | null | undefined> = [],
+    settings?: any
+  ) {
+    return {
+      '@context': 'https://schema.org',
+      '@graph': [
+        buildServerOrganizationNode(origin, settings),
+        buildServerWebSiteNode(origin),
+        ...extraNodes.filter((n): n is Record<string, any> => Boolean(n))
+      ]
+    };
+  }
+
   function applyServerSeoTags(
     html: string,
     meta: {
@@ -1519,7 +1633,8 @@ async function startServer() {
       origin: string;
     }
   ): string {
-    const canonicalUrl = `${meta.origin}${meta.canonicalPath.startsWith('/') ? meta.canonicalPath : `/${meta.canonicalPath}`}`;
+    const normalizedPath = meta.canonicalPath.startsWith('/') ? meta.canonicalPath : `/${meta.canonicalPath}`;
+    const canonicalUrl = `${meta.origin}${normalizedPath}`;
     const ogImage = `${meta.origin}/pwa-512x512.png`;
     const safeTitle = escapeHtml(meta.title);
     const safeDesc = escapeHtml(meta.description);
@@ -1534,7 +1649,8 @@ async function startServer() {
       .replace(/<meta\s+name="robots"[^>]*>/gi, '')
       .replace(/<link\s+rel="canonical"[^>]*>/gi, '')
       .replace(/<meta\s+property="og:(type|site_name|title|description|url|image)"[^>]*>/gi, '')
-      .replace(/<meta\s+name="twitter:(card|title|description|image)"[^>]*>/gi, '');
+      .replace(/<meta\s+name="twitter:(card|title|description|image)"[^>]*>/gi, '')
+      .replace(/<script\s+id="gulfaro-route-jsonld"[^>]*>[\s\S]*?<\/script>/gi, '');
 
     const jsonLdTag = meta.jsonLd
       ? `\n    <script id="gulfaro-route-jsonld" type="application/ld+json">${JSON.stringify(meta.jsonLd).replace(/<\/script>/gi, '<\\/script>')}</script>`
@@ -1656,7 +1772,20 @@ async function startServer() {
   app.get('/robots.txt', (req: Request, res: Response) => {
     const baseUrl = getCanonicalBaseOrigin(req);
     const robotsTxt = [
+      'User-agent: Googlebot',
+      'Allow: /',
+      'Allow: /favicon.ico',
+      'Allow: /favicon.png',
+      'Allow: /apple-touch-icon.png',
+      '',
+      'User-agent: Googlebot-Image',
+      'Allow: /',
+      'Allow: /favicon.ico',
+      'Allow: /favicon.png',
+      'Allow: /apple-touch-icon.png',
+      '',
       'User-agent: *',
+      'Content-Signal: search=yes, ai-train=no',
       'Allow: /',
       'Disallow: /api/',
       'Disallow: /super-admin',
@@ -1785,6 +1914,88 @@ ${xmlItems}
     }
   });
 
+  // Dynamic /llms.txt for AI discoverability (HTTP 200, Content-Type: text/plain)
+  app.get('/llms.txt', async (req: Request, res: Response) => {
+    try {
+      const origin = getCanonicalBaseOrigin(req);
+      const [jobs, settings] = await Promise.all([getJobs(), getSiteSettings().catch(() => null)]);
+      const body = buildLlmsTxt({ origin, jobs, settings });
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'text/plain; charset=utf-8',
+          Link: DISCOVERY_LINK_HEADER,
+          'Cache-Control': 'public, max-age=120, must-revalidate',
+          'X-Content-Type-Options': 'nosniff'
+        })
+        .vary('Accept')
+        .send(body);
+    } catch (err) {
+      console.error('Error generating /llms.txt:', err);
+      const fallbackPath = path.resolve(__dirname, 'public', 'llms.txt');
+      if (fs.existsSync(fallbackPath)) {
+        res
+          .status(200)
+          .set({
+            'Content-Type': 'text/plain; charset=utf-8',
+            Link: DISCOVERY_LINK_HEADER
+          })
+          .vary('Accept')
+          .sendFile(fallbackPath);
+        return;
+      }
+      res.status(500).type('text/plain').send('Failed to generate llms.txt');
+    }
+  });
+
+  // Explicit Markdown alternate for Gulfaro homepage (/index.md)
+  app.get('/index.md', async (req: Request, res: Response) => {
+    try {
+      const origin = getCanonicalBaseOrigin(req);
+      const [jobs, settings] = await Promise.all([getJobs(), getSiteSettings().catch(() => null)]);
+      const markdown = buildHomepageMarkdown({ origin, jobs, settings });
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'text/markdown; charset=utf-8',
+          Link: DISCOVERY_LINK_HEADER,
+          'Cache-Control': 'public, max-age=120, must-revalidate',
+          'X-Content-Type-Options': 'nosniff'
+        })
+        .vary('Accept')
+        .send(markdown);
+    } catch (err) {
+      console.error('Error generating /index.md:', err);
+      const fallbackPath = path.resolve(__dirname, 'public', 'index.md');
+      if (fs.existsSync(fallbackPath)) {
+        res
+          .status(200)
+          .set({
+            'Content-Type': 'text/markdown; charset=utf-8',
+            Link: DISCOVERY_LINK_HEADER
+          })
+          .vary('Accept')
+          .sendFile(fallbackPath);
+        return;
+      }
+      res.status(500).type('text/plain').send('Failed to generate Markdown homepage');
+    }
+  });
+
+  // =========================================================================
+  // Read-Only MCP Server (/mcp) & MCP Server Card (/.well-known/mcp/server-card.json)
+  // Mounted BEFORE Vite/static & the generic .well-known 404 fallback.
+  // =========================================================================
+  const mcpHandlers = createGulfaroMcpHandlers({
+    getJobs,
+    getSiteSettings,
+    enrichJobsVerifiedStatus,
+    getCanonicalBaseOrigin
+  });
+
+  app.get('/.well-known/mcp/server-card.json', mcpHandlers.handleServerCard);
+  app.all('/mcp', mcpHandlers.handleMcpRequest);
+
   // Ensure unmatched /api/* routes and middleware/body-parser errors always return JSON (never HTML)
   app.use('/api', (_req: Request, res: Response) => {
     res.status(404).json({ error: 'API endpoint not found.' });
@@ -1794,7 +2005,7 @@ ${xmlItems}
     if (res.headersSent) {
       return next(err);
     }
-    if (req.originalUrl.startsWith('/api')) {
+    if (req.originalUrl.startsWith('/api') || req.path === '/mcp') {
       const status = Number(err?.status || err?.statusCode || 500);
       const message =
         err?.type === 'entity.too.large'
@@ -1802,6 +2013,16 @@ ${xmlItems}
           : err?.type === 'entity.parse.failed'
             ? 'Invalid JSON request payload.'
             : err?.message || 'Internal server error.';
+      if (req.path === '/mcp') {
+        return res.status(status >= 400 && status < 600 ? status : 400).json({
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: err?.type === 'entity.parse.failed' ? -32700 : -32600,
+            message
+          }
+        });
+      }
       return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
     }
     return next(err);
@@ -1832,17 +2053,75 @@ ${xmlItems}
     }
   }
 
+  // Explicitly return HTTP 404 for missing /.well-known/* endpoints
+  // and missing static file extensions so they never fall through to the homepage HTML.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const pathname = req.path.replace(/\/+$/, '') || '/';
+    if (pathname.startsWith('/api') || pathname === '/mcp' || pathname === '/.well-known/mcp/server-card.json') {
+      return next();
+    }
+    if (pathname === '/.well-known' || pathname.startsWith('/.well-known/')) {
+      if (pathname.toLowerCase().endsWith('.json') || (req.headers.accept || '').includes('application/json')) {
+        return res
+          .status(404)
+          .set({ 'Cache-Control': 'no-cache, no-store, must-revalidate' })
+          .json({ error: 'Not Found', path: pathname });
+      }
+      return res
+        .status(404)
+        .set({ 'Cache-Control': 'no-cache, no-store, must-revalidate' })
+        .type('text/plain')
+        .send('404 Not Found');
+    }
+    const ext = path.extname(pathname);
+    if (ext && !/^\/jobs?\/[^/]+\.html$/i.test(pathname)) {
+      if (ext.toLowerCase() === '.json') {
+        return res
+          .status(404)
+          .set({ 'Cache-Control': 'no-cache, no-store, must-revalidate' })
+          .json({ error: 'Not Found', path: pathname });
+      }
+      return res
+        .status(404)
+        .set({ 'Cache-Control': 'no-cache, no-store, must-revalidate' })
+        .type('text/plain')
+        .send('404 Not Found');
+    }
+    return next();
+  });
+
   // Universal HTML Handler with Route-Aware SEO, OpenGraph Card & SSR Initial Job Data Injection
   app.get('*', async (req: Request, res: Response, next: NextFunction) => {
     const url = req.originalUrl;
     const pathname = req.path.replace(/\/+$/, '') || '/';
 
-    // Skip API and assets with file extensions
-    if (url.startsWith('/api') || path.extname(pathname)) {
+    // Skip API
+    if (url.startsWith('/api')) {
       return next();
     }
 
     try {
+      const origin = getCanonicalBaseOrigin(req);
+
+      // Server-side content negotiation for Accept: text/markdown (or ?format=markdown) on homepage (/)
+      if (pathname === '/' && (req.query.format === 'markdown' || prefersMarkdown(req.headers.accept))) {
+        const [jobs, settings] = await Promise.all([
+          getJobs().catch(() => []),
+          getSiteSettings().catch(() => null)
+        ]);
+        const markdown = buildHomepageMarkdown({ origin, jobs, settings });
+        return res
+          .status(200)
+          .set({
+            'Content-Type': 'text/markdown; charset=utf-8',
+            Link: DISCOVERY_LINK_HEADER,
+            'Cache-Control': 'public, max-age=120, must-revalidate',
+            'X-Content-Type-Options': 'nosniff'
+          })
+          .vary('Accept')
+          .send(markdown);
+      }
+
       let template: string;
       if (!isProduction && vite) {
         template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
@@ -1853,23 +2132,81 @@ ${xmlItems}
           template = fs.readFileSync(indexPath, 'utf-8');
         } else {
           // API-only deployment (e.g. Render backend while frontend runs on Hostinger)
-          return res.status(200).json({
-            service: 'Gulfaro Backend API',
-            status: 'ok',
-            health: '/api/health'
+          if (pathname === '/') {
+            return res.status(200).json({
+              service: 'Gulfaro Backend API',
+              status: 'ok',
+              health: '/api/health'
+            });
+          }
+          return res.status(404).json({
+            error: 'Not Found',
+            path: pathname
           });
         }
       }
 
-      const origin = getCanonicalBaseOrigin(req);
+      const siteSettings = await getSiteSettings().catch(() => null);
+      let responseStatus = 200;
 
-      // Check if this request is for an individual job URL: /job/:idOrSlug or /jobs/:idOrSlug
-      const jobUrlMatch = pathname.match(/^\/jobs?\/([^/?#]+)/i);
-      const queryJobParam = req.query.job as string | undefined;
+      // Check if this request is for an individual job URL: /job/:idOrSlug or /jobs/:idOrSlug (single segment)
+      const jobUrlMatch = pathname.match(/^\/jobs?\/([^/]+)$/i);
+      const queryJobParam =
+        pathname === '/'
+          ? ((req.query.job || req.query.id || req.query.ref) as string | undefined)
+          : undefined;
       const targetSlugOrId = jobUrlMatch ? jobUrlMatch[1] : queryJobParam;
 
+      const lowerPath = pathname.toLowerCase();
+      const privateSeoMap: Record<string, { title: string; description: string; canonicalPath: string }> = {
+        '/super-admin': {
+          title: 'Super Admin Portal | Gulfaro',
+          description: 'Restricted Gulfaro platform administration portal.',
+          canonicalPath: '/super-admin'
+        },
+        '/post-job': {
+          title: 'Post a Job Vacancy | Gulfaro',
+          description: 'Publish a direct GCC job vacancy on Gulfaro for Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.',
+          canonicalPath: '/post-job'
+        },
+        '/post': {
+          title: 'Post a Job Vacancy | Gulfaro',
+          description: 'Publish a direct GCC job vacancy on Gulfaro for Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.',
+          canonicalPath: '/post-job'
+        },
+        '/my-job-posts': {
+          title: 'Manage Job Advertisements | Gulfaro',
+          description: 'Review, edit, renew, or manage your published GCC job advertisements on Gulfaro.',
+          canonicalPath: '/my-job-posts'
+        },
+        '/manage-jobs': {
+          title: 'Manage Job Advertisements | Gulfaro',
+          description: 'Review, edit, renew, or manage your published GCC job advertisements on Gulfaro.',
+          canonicalPath: '/my-job-posts'
+        },
+        '/forgot-password': {
+          title: 'Account & Password Recovery | Gulfaro',
+          description: 'Recover access to your Gulfaro employer or job seeker account using your registered email or 5-digit access key.',
+          canonicalPath: '/forgot-password'
+        },
+        '/reset-password': {
+          title: 'Reset Password | Gulfaro',
+          description: 'Set a new password for your Gulfaro account.',
+          canonicalPath: '/reset-password'
+        },
+        '/unauthorized': {
+          title: 'Employer Access Required | Gulfaro',
+          description: 'Employer account authorization is required to publish and manage job vacancies on Gulfaro.',
+          canonicalPath: '/unauthorized'
+        }
+      };
+
+      const countryRouteMatch = pathname.match(/^\/country\/([^/]+)$/i);
+      const categoryRouteMatch = pathname.match(/^\/category\/([^/]+)$/i);
+      const articleRouteMatch = pathname.match(/^\/career-advice\/([^/]+)$/i);
+
       if (targetSlugOrId) {
-        const [jobs, settings] = await Promise.all([getJobs(), getSiteSettings()]);
+        const [jobs, settings] = await Promise.all([getJobs(), siteSettings ? Promise.resolve(siteSettings) : getSiteSettings()]);
         const rawMatchedJob =
           settings.emergency.hideAllPublicJobs || settings.emergency.emergencyShutdown
             ? undefined
@@ -1880,10 +2217,16 @@ ${xmlItems}
 
         if (matchedJob && matchedJob.status !== 'hidden' && matchedJob.status !== 'rejected') {
           const active = isJobActiveAndUnexpired(matchedJob as any);
-          const countryName = GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES]?.name || matchedJob.country;
+          const countryInfo = GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES];
+          const countryName = countryInfo?.name || matchedJob.country;
+          const categoryMeta = PUBLIC_JOB_CATEGORIES.find(
+            c => c.slug === matchedJob.category || c.id === matchedJob.category
+          );
           const locationLabel = formatJobLocationLabel(matchedJob.city, countryName);
           const cleanDesc = (matchedJob.description || '').replace(/\s+/g, ' ').trim();
           const summaryDesc = cleanDesc.length > 155 ? `${cleanDesc.slice(0, 152)}...` : cleanDesc;
+          const jobCanonicalPath = `/job/${matchedJob.slug || matchedJob.id}`;
+          const jobCanonicalUrl = `${origin}${jobCanonicalPath}`;
           const employmentMap: Record<string, string> = {
             'full-time': 'FULL_TIME',
             'part-time': 'PART_TIME',
@@ -1893,13 +2236,32 @@ ${xmlItems}
             'walk-in': 'FULL_TIME'
           };
 
-          const jobPostingJsonLd =
+          const fullDescriptionParts = [String(matchedJob.description || '').trim()];
+          if (Array.isArray(matchedJob.responsibilities) && matchedJob.responsibilities.length > 0) {
+            fullDescriptionParts.push(`Responsibilities: ${matchedJob.responsibilities.join('; ')}`);
+          }
+          if (Array.isArray(matchedJob.requirements) && matchedJob.requirements.length > 0) {
+            fullDescriptionParts.push(`Requirements: ${matchedJob.requirements.join('; ')}`);
+          }
+          if (Array.isArray(matchedJob.benefits) && matchedJob.benefits.length > 0) {
+            fullDescriptionParts.push(`Benefits: ${matchedJob.benefits.join('; ')}`);
+          }
+
+          const jobBreadcrumbNode = buildServerBreadcrumbListNode(origin, [
+            { name: 'Home', path: '/' },
+            { name: `${countryName} Jobs`, path: `/country/${matchedJob.country}` },
+            { name: matchedJob.title, path: jobCanonicalPath }
+          ]);
+
+          const jobPostingNode =
             active && matchedJob.title && matchedJob.description
               ? {
-                  '@context': 'https://schema.org/',
                   '@type': 'JobPosting',
+                  '@id': `${jobCanonicalUrl}#jobposting`,
                   title: matchedJob.title,
-                  description: matchedJob.description,
+                  description: fullDescriptionParts.join('\n\n'),
+                  url: jobCanonicalUrl,
+                  directApply: true,
                   identifier: {
                     '@type': 'PropertyValue',
                     name: 'Gulfaro',
@@ -1908,6 +2270,15 @@ ${xmlItems}
                   datePosted: matchedJob.postedAt,
                   validThrough: matchedJob.expiresAt,
                   employmentType: employmentMap[matchedJob.employmentType] || 'FULL_TIME',
+                  ...(categoryMeta?.name || matchedJob.category
+                    ? { occupationalCategory: categoryMeta?.name || matchedJob.category }
+                    : {}),
+                  ...(matchedJob.experienceLevel
+                    ? { experienceRequirements: String(matchedJob.experienceLevel).replace(/-/g, ' ') }
+                    : {}),
+                  ...(matchedJob.educationLevel
+                    ? { educationRequirements: String(matchedJob.educationLevel) }
+                    : {}),
                   hiringOrganization: {
                     '@type': 'Organization',
                     name: matchedJob.company || 'Direct GCC Employer'
@@ -1920,15 +2291,22 @@ ${xmlItems}
                         ? { streetAddress: matchedJob.district || matchedJob.city }
                         : {}),
                       ...(matchedJob.city ? { addressLocality: matchedJob.city } : {}),
-                      addressCountry: GCC_COUNTRIES[matchedJob.country as keyof typeof GCC_COUNTRIES]?.code || 'SA'
+                      addressCountry: countryInfo?.code || 'SA'
                     }
                   },
-                  ...(matchedJob.workMode === 'remote' ? { jobLocationType: 'TELECOMMUTE' } : {}),
+                  ...(matchedJob.workMode === 'remote'
+                    ? {
+                        jobLocationType: 'TELECOMMUTE',
+                        ...(countryName
+                          ? { applicantLocationRequirements: { '@type': 'Country', name: countryName } }
+                          : {})
+                      }
+                    : {}),
                   ...(matchedJob.salaryMin && matchedJob.salaryMin > 0
                     ? {
                         baseSalary: {
                           '@type': 'MonetaryAmount',
-                          currency: matchedJob.currency || 'SAR',
+                          currency: matchedJob.currency || countryInfo?.currencyCode || 'SAR',
                           value: {
                             '@type': 'QuantitativeValue',
                             minValue: matchedJob.salaryMin,
@@ -1951,13 +2329,17 @@ ${xmlItems}
           template = applyServerSeoTags(template, {
             title: active
               ? `${matchedJob.title}${companyTitleSuffix} (${locationLabel}) | Gulfaro`
-              : `${matchedJob.title} (Expired)${companyTitleSuffix} | Gulfaro`,
+              : `${matchedJob.title} (Expired)${companyTitleSuffix} (${locationLabel}) | Gulfaro`,
             description:
               summaryDesc || `${matchedJob.title} opportunity${companyAtClause} in ${locationLabel}.`,
-            canonicalPath: `/job/${matchedJob.slug || matchedJob.id}`,
+            canonicalPath: jobCanonicalPath,
             robots: active ? 'index, follow' : 'noindex, follow',
             ogType: 'article',
-            jsonLd: jobPostingJsonLd,
+            jsonLd: buildServerSeoGraph(
+              origin,
+              active ? [jobBreadcrumbNode, jobPostingNode] : [jobBreadcrumbNode],
+              settings
+            ),
             origin
           });
 
@@ -1968,11 +2350,13 @@ ${xmlItems}
     </script>`;
           template = template.replace('</head>', `${ssrScript}\n  </head>`);
         } else {
+          responseStatus = 404;
           template = applyServerSeoTags(template, {
-            title: 'Job Advertisement Not Found | Gulfaro',
+            title: '404 – Job Advertisement Not Found | Gulfaro',
             description: 'The requested job listing is no longer available or has expired. Browse active GCC opportunities on Gulfaro.',
             canonicalPath: pathname,
             robots: 'noindex, follow',
+            jsonLd: null,
             origin
           });
 
@@ -1985,141 +2369,372 @@ ${xmlItems}
         }
       } else if (pathname === '/countries') {
         template = applyServerSeoTags(template, {
-          title: 'Browse Jobs by GCC Country | Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman | Gulfaro',
-          description: 'Explore regional job hubs, major hiring cities, labor portals, and active vacancies across all six GCC countries.',
+          title: 'GCC Country Job Portals — Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman | Gulfaro',
+          description: 'Browse verified direct-employer job openings and labor guides across Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman.',
           canonicalPath: '/countries',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'GCC Countries', path: '/countries' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
-      } else if (pathname.startsWith('/country/')) {
-        const slug = pathname.replace(/^\/country\//i, '').split('/')[0];
+      } else if (countryRouteMatch) {
+        const slug = decodeURIComponent(countryRouteMatch[1]);
         const countryMeta = findCountryMetaBySlug(slug);
         if (countryMeta) {
           template = applyServerSeoTags(template, {
             title: `Jobs in ${countryMeta.name} (${countryMeta.shortName}) – Direct Employer Vacancies | Gulfaro`,
-            description: countryMeta.overview,
+            description: countryMeta.overview.slice(0, 158),
             canonicalPath: `/country/${countryMeta.slug}`,
+            jsonLd: buildServerSeoGraph(
+              origin,
+              [
+                buildServerBreadcrumbListNode(origin, [
+                  { name: 'Home', path: '/' },
+                  { name: 'GCC Countries', path: '/countries' },
+                  { name: countryMeta.name, path: `/country/${countryMeta.slug}` }
+                ])
+              ],
+              siteSettings
+            ),
             origin
           });
         } else {
+          responseStatus = 404;
           template = applyServerSeoTags(template, {
-            title: 'GCC Countries Directory | Gulfaro',
-            description: 'Browse active jobs across Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman.',
-            canonicalPath: '/countries',
-            robots: 'noindex, follow',
+            title: '404 – GCC Country Not Found | Gulfaro',
+            description: 'Explore active job portals across Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman on Gulfaro.',
+            canonicalPath: pathname,
+            robots: 'noindex, nofollow',
+            jsonLd: null,
             origin
           });
+          const notFoundScript = `
+    <script id="gulfaro-ssr-data">
+      window.__ROUTE_NOT_FOUND__ = true;
+      window.__REQUESTED_PATH__ = ${JSON.stringify(pathname)};
+    </script>`;
+          template = template.replace('</head>', `${notFoundScript}\n  </head>`);
         }
       } else if (pathname === '/categories') {
         template = applyServerSeoTags(template, {
-          title: 'All 30 GCC Job Categories | Engineering, Healthcare, IT, Finance & More | Gulfaro',
+          title: 'All 30 GCC Job Categories | Accounting, Engineering, IT, Healthcare & More | Gulfaro',
           description: 'Browse open employment vacancies across 30 GCC industries including Engineering, Healthcare, IT, Accounting, Construction, Logistics, Hospitality, and more.',
           canonicalPath: '/categories',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Job Categories', path: '/categories' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
-      } else if (pathname.startsWith('/category/')) {
-        const slug = pathname.replace(/^\/category\//i, '').split('/')[0];
+      } else if (categoryRouteMatch) {
+        const slug = decodeURIComponent(categoryRouteMatch[1]);
         const catMeta = findCategoryMetaBySlug(slug);
         if (catMeta) {
           template = applyServerSeoTags(template, {
-            title: `${catMeta.name} Jobs in GCC – Saudi Arabia, UAE, Qatar & Gulf | Gulfaro`,
-            description: `${catMeta.summary} ${catMeta.overview}`,
+            title: `${catMeta.name} Jobs in Saudi Arabia, UAE & GCC | Gulfaro`,
+            description: `${catMeta.summary} ${catMeta.overview}`.slice(0, 158),
             canonicalPath: `/category/${catMeta.slug}`,
+            jsonLd: buildServerSeoGraph(
+              origin,
+              [
+                buildServerBreadcrumbListNode(origin, [
+                  { name: 'Home', path: '/' },
+                  { name: 'Job Categories', path: '/categories' },
+                  { name: catMeta.name, path: `/category/${catMeta.slug}` }
+                ])
+              ],
+              siteSettings
+            ),
             origin
           });
         } else {
+          responseStatus = 404;
           template = applyServerSeoTags(template, {
-            title: 'GCC Job Categories | Gulfaro',
+            title: '404 – Job Category Not Found | Gulfaro',
             description: 'Explore GCC employment opportunities organized by industry category.',
-            canonicalPath: '/categories',
-            robots: 'noindex, follow',
+            canonicalPath: pathname,
+            robots: 'noindex, nofollow',
+            jsonLd: null,
             origin
           });
+          const notFoundScript = `
+    <script id="gulfaro-ssr-data">
+      window.__ROUTE_NOT_FOUND__ = true;
+      window.__REQUESTED_PATH__ = ${JSON.stringify(pathname)};
+    </script>`;
+          template = template.replace('</head>', `${notFoundScript}\n  </head>`);
         }
       } else if (pathname === '/career-advice') {
         template = applyServerSeoTags(template, {
           title: 'GCC Career Advice, CV Writing & Interview Preparation Guides | Gulfaro',
           description: 'Original articles covering Gulf job search strategy, professional CV preparation, common interview questions, and GCC labor contract essentials.',
           canonicalPath: '/career-advice',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Career Advice', path: '/career-advice' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
-      } else if (pathname.startsWith('/career-advice/')) {
-        const slug = pathname.replace(/^\/career-advice\//i, '').split('/')[0];
+      } else if (articleRouteMatch) {
+        const slug = decodeURIComponent(articleRouteMatch[1]);
         const article = CAREER_ARTICLES.find(a => a.slug === slug);
         if (article) {
+          const articleUrl = `${origin}/career-advice/${article.slug}`;
           template = applyServerSeoTags(template, {
             title: `${article.title} | Gulfaro Career Advice`,
-            description: article.summary,
+            description: article.summary.slice(0, 158),
             canonicalPath: `/career-advice/${article.slug}`,
             ogType: 'article',
-            jsonLd: {
-              '@context': 'https://schema.org',
-              '@type': 'Article',
-              headline: article.title,
-              description: article.summary,
-              author: { '@type': 'Organization', name: 'Gulfaro Career Editorial Guide' },
-              publisher: {
-                '@type': 'Organization',
-                name: 'Gulfaro',
-                logo: { '@type': 'ImageObject', url: `${origin}/pwa-512x512.png` }
-              },
-              mainEntityOfPage: `${origin}/career-advice/${article.slug}`
-            },
+            jsonLd: buildServerSeoGraph(
+              origin,
+              [
+                buildServerBreadcrumbListNode(origin, [
+                  { name: 'Home', path: '/' },
+                  { name: 'Career Advice', path: '/career-advice' },
+                  { name: article.title, path: `/career-advice/${article.slug}` }
+                ]),
+                {
+                  '@type': 'Article',
+                  '@id': `${articleUrl}#article`,
+                  headline: article.title,
+                  description: article.summary,
+                  author: { '@type': 'Organization', name: 'Gulfaro Career Editorial Guide' },
+                  publisher: { '@id': `${origin}/#organization` },
+                  mainEntityOfPage: articleUrl
+                }
+              ],
+              siteSettings
+            ),
             origin
           });
+        } else {
+          responseStatus = 404;
+          template = applyServerSeoTags(template, {
+            title: '404 – Career Article Not Found | Gulfaro',
+            description: 'Explore original GCC career advice, CV blueprints, and interview guides on Gulfaro.',
+            canonicalPath: pathname,
+            robots: 'noindex, nofollow',
+            jsonLd: null,
+            origin
+          });
+          const notFoundScript = `
+    <script id="gulfaro-ssr-data">
+      window.__ROUTE_NOT_FOUND__ = true;
+      window.__REQUESTED_PATH__ = ${JSON.stringify(pathname)};
+    </script>`;
+          template = template.replace('</head>', `${notFoundScript}\n  </head>`);
         }
       } else if (pathname === '/about') {
+        const aboutTitle = 'About Us — Gulfaro Direct GCC Job Portal & Hiring Standards';
+        const aboutDescription =
+          'Learn how Gulfaro connects employers and job seekers across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman with transparent hiring rules.';
+        const visibleFaqs = (siteSettings?.cms?.faqs || [])
+          .map((f: any) => ({
+            question: String(f?.question || '').trim(),
+            answer: String(f?.answer || '').trim()
+          }))
+          .filter((f: { question: string; answer: string }) => f.question && f.answer);
+
+        const faqNode =
+          visibleFaqs.length > 0
+            ? {
+                '@type': 'FAQPage',
+                mainEntity: visibleFaqs.map((faq: { question: string; answer: string }) => ({
+                  '@type': 'Question',
+                  name: faq.question,
+                  acceptedAnswer: {
+                    '@type': 'Answer',
+                    text: faq.answer
+                  }
+                }))
+              }
+            : null;
+
         template = applyServerSeoTags(template, {
-          title: 'About Gulfaro | Direct GCC Job Portal & Recruitment Standards',
-          description: 'Learn how Gulfaro connects professionals with direct employers across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.',
+          title: aboutTitle,
+          description: aboutDescription,
           canonicalPath: '/about',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'About Us', path: '/about' }
+              ]),
+              {
+                '@type': 'AboutPage',
+                name: aboutTitle,
+                description: aboutDescription
+              },
+              faqNode
+            ],
+            siteSettings
+          ),
           origin
         });
       } else if (pathname === '/contact') {
+        const contactTitle = 'Contact Us — Gulfaro Support & Trust Desk';
+        const contactDescription =
+          'Reach Gulfaro administration by official email admingulfaro@gmail.com or submit an inquiry regarding job listings, employer verification, or privacy requests.';
         template = applyServerSeoTags(template, {
-          title: 'Contact Gulfaro | Official Support & Trust Desk',
-          description: 'Contact the Gulfaro administration team by email or online inquiry form for listing assistance, account help, or safety reports.',
+          title: contactTitle,
+          description: contactDescription,
           canonicalPath: '/contact',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Contact Us', path: '/contact' }
+              ]),
+              {
+                '@type': 'ContactPage',
+                name: contactTitle,
+                description: contactDescription
+              }
+            ],
+            siteSettings
+          ),
           origin
         });
       } else if (pathname === '/privacy-policy') {
         template = applyServerSeoTags(template, {
-          title: 'Privacy Policy | Data Protection, Cookies & Advertising Disclosure | Gulfaro',
+          title: 'Privacy Policy & Data Protection | Gulfaro',
           description: 'Read the Gulfaro Privacy Policy detailing data collection, GCC compliance, cookies, and Google AdSense advertising disclosures.',
           canonicalPath: '/privacy-policy',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Privacy Policy', path: '/privacy-policy' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
       } else if (pathname === '/terms') {
         template = applyServerSeoTags(template, {
-          title: 'Terms and Conditions | Gulfaro Platform Rules',
-          description: 'Review Gulfaro Terms and Conditions governing job listings, prohibited candidate fees, and platform usage across the GCC.',
+          title: 'Terms & Conditions | Gulfaro GCC Job Portal',
+          description: 'Review Gulfaro Terms & Conditions governing job listings, prohibited candidate fees, and platform usage across the GCC.',
           canonicalPath: '/terms',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Terms & Conditions', path: '/terms' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
       } else if (pathname === '/disclaimer') {
         template = applyServerSeoTags(template, {
-          title: 'Disclaimer | Gulfaro Legal & Content Notice',
+          title: 'Legal & Editorial Disclaimer | Gulfaro',
           description: 'Read Gulfaro legal disclaimers regarding employer-published job advertisements, career guidance articles, and direct candidate communication.',
           canonicalPath: '/disclaimer',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Disclaimer', path: '/disclaimer' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
       } else if (pathname === '/cookie-policy') {
         template = applyServerSeoTags(template, {
-          title: 'Cookie Policy | Essential & Third-Party Advertising Cookies | Gulfaro',
+          title: 'Cookie Policy | Essential & Advertising Cookies | Gulfaro',
           description: 'Learn how Gulfaro uses essential storage, preferences, and Google AdSense advertising cookies, plus how to manage your browser settings.',
           canonicalPath: '/cookie-policy',
+          jsonLd: buildServerSeoGraph(
+            origin,
+            [
+              buildServerBreadcrumbListNode(origin, [
+                { name: 'Home', path: '/' },
+                { name: 'Cookie Policy', path: '/cookie-policy' }
+              ])
+            ],
+            siteSettings
+          ),
           origin
         });
-      } else if (/^\/(super-admin|post-job|post|my-job-posts|manage-jobs|forgot-password|reset-password|unauthorized)/i.test(pathname)) {
+      } else if (lowerPath === '/super-admin' || lowerPath.startsWith('/super-admin/') || privateSeoMap[lowerPath]) {
+        const privateMeta =
+          privateSeoMap[lowerPath] || privateSeoMap['/super-admin'];
+
         template = applyServerSeoTags(template, {
-          title: 'Gulfaro Account & Administration',
-          description: 'Gulfaro employer and administration portal.',
+          title: privateMeta.title,
+          description: privateMeta.description,
+          canonicalPath: privateMeta.canonicalPath,
+          robots: 'noindex, nofollow',
+          jsonLd: null,
+          origin
+        });
+      } else if (pathname === '/') {
+        template = applyServerSeoTags(template, {
+          title: 'Gulfaro – GCC Job Portal | Jobs in Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman',
+          description: 'Find direct employer jobs across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman alongside original GCC CV writing, contract, and interview career guides.',
+          canonicalPath: '/',
+          jsonLd: buildServerSeoGraph(origin, [], siteSettings),
+          origin
+        });
+      } else {
+        responseStatus = 404;
+        template = applyServerSeoTags(template, {
+          title: '404 – Page Not Found | Gulfaro',
+          description: 'The requested page could not be found on Gulfaro. Return to the homepage to browse active GCC job vacancies.',
           canonicalPath: pathname,
           robots: 'noindex, nofollow',
+          jsonLd: null,
           origin
         });
+        const notFoundScript = `
+    <script id="gulfaro-ssr-data">
+      window.__ROUTE_NOT_FOUND__ = true;
+      window.__REQUESTED_PATH__ = ${JSON.stringify(pathname)};
+    </script>`;
+        template = template.replace('</head>', `${notFoundScript}\n  </head>`);
       }
 
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/html; charset=utf-8',
+        Link: DISCOVERY_LINK_HEADER
+      };
+      if (responseStatus === 404) {
+        headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      }
+
+      res
+        .status(responseStatus)
+        .set(headers)
+        .vary('Accept')
+        .end(template);
     } catch (e: any) {
       if (vite) {
         vite.ssrFixStacktrace(e);

@@ -441,7 +441,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             {mode === 'login' && (
               <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Welcome Back to Gulfaro</h3>
+                  <h1 className="text-lg font-bold text-slate-900">Welcome Back to Gulfaro — Sign In</h1>
                   <p className="text-slate-500 text-xs">Access your posted advertisements, saved vacancies, and direct leads</p>
                 </div>
 
@@ -536,7 +536,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             {mode === 'signup' && (
               <form onSubmit={handleSignupSubmit} className="space-y-3.5 text-xs">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Create an Account</h3>
+                  <h1 className="text-lg font-bold text-slate-900">Create a Gulfaro Account</h1>
                   <p className="text-slate-500 text-xs">Select your account type — accounts are verified automatically upon signup</p>
                 </div>
 

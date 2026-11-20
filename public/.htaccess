@@ -1,3 +1,8 @@
+<IfModule mod_mime.c>
+  AddType text/plain .txt
+  AddType text/markdown .md
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
@@ -11,27 +16,57 @@
   RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
   RewriteRule ^(.*)$ https://www.gulfaro.net/$1 [R=301,L]
 
-  # 2. Serve dynamic XML sitemap directly at /sitemap.xml (HTTP 200, application/xml) before SPA fallback
+  # 2. Serve dynamic XML sitemap, llms.txt, and Markdown homepage alternate before static/SPA checks
   RewriteRule ^sitemap\.xml$ sitemap.php [L]
+  RewriteRule ^llms\.txt$ llms.php [L]
+  RewriteRule ^index\.md$ homepage-markdown.php [L]
 
-  # 3. Never rewrite backend API endpoints to frontend HTML
-  RewriteRule ^api(/.*)?$ - [L]
+  # 3. Server-side content negotiation on homepage (/) for Accept: text/markdown or ?format=markdown
+  RewriteCond %{REQUEST_URI} ^/(index\.html)?$
+  RewriteCond %{HTTP:Accept} text/markdown [NC,OR]
+  RewriteCond %{QUERY_STRING} (^|&)format=markdown(&|$) [NC]
+  RewriteRule ^(index\.html)?$ homepage-markdown.php [L]
 
-  # 4. Serve dynamic OpenGraph / WhatsApp / Facebook metadata for individual job links
+  # 4. Never rewrite existing physical files (JS, CSS, images, icons, config, robots.txt, ads.txt, manifest.json)
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^ - [L]
+
+  # 5. Never fall through to homepage for missing /api/*, /.well-known/* (including /.well-known/mcp/server-card.json),
+  #    or missing static asset/data file extensions -> return genuine HTTP 404
+  RewriteRule ^api(/.*)?$ not-found.php?type=json [L]
+  RewriteRule ^\.well-known(/.*)?$ not-found.php?type=well-known [L]
+  RewriteCond %{REQUEST_URI} \.(json|xml|txt|md|js|mjs|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|pdf|zip|php|webmanifest|yaml|yml)$ [NC]
+  RewriteRule ^ not-found.php?type=asset [L]
+  RewriteCond %{REQUEST_URI} \.html$ [NC]
+  RewriteCond %{REQUEST_URI} !^/jobs?/[^/]+\.html$ [NC]
+  RewriteRule ^ not-found.php [L]
+
+  # 6. Redirect legacy /admin paths cleanly to /super-admin
+  RewriteRule ^admin(/.*)?$ /super-admin [R=302,L]
+
+  # 7. Serve dynamic OpenGraph / WhatsApp / Facebook metadata for individual job links
   RewriteCond %{HTTP_USER_AGENT} (WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|TelegramBot|Slackbot|Discordbot|Pinterest) [NC]
   RewriteRule ^jobs?/([^/]+)/?$ https://gulfaro.onrender.com/share/job/$1 [R=302,L]
 
-  # 5. Serve existing physical files and directories normally (JS, CSS, images, icons, config, robots.txt)
-  RewriteCond %{REQUEST_FILENAME} -f [OR]
-  RewriteCond %{REQUEST_FILENAME} -d
-  RewriteRule ^ - [L]
+  # 8. Fast-path homepage HTML when no ?job=/?id=/?ref= query parameter is present
+  RewriteCond %{QUERY_STRING} !(^|&)(job|id|ref)= [NC]
+  RewriteRule ^$ index.html [L]
 
-  # 6. SPA fallback: route all valid frontend URLs (/job/SLUG, /country/..., /category/..., etc.) to index.html
-  RewriteRule ^ index.html [L]
+  # 9. Validate all remaining SPA routes and job URLs via spa-router.php (HTTP 200 for valid routes, HTTP 404 for missing URLs)
+  RewriteRule ^ spa-router.php [L]
 </IfModule>
 
 <IfModule mod_headers.c>
   <FilesMatch "^(index\.html|gulfaro-config\.js|sw\.js)$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
   </FilesMatch>
+  <FilesMatch "^(index\.html|index\.md|llms\.txt)$">
+    Header set Link "</llms.txt>; rel=\"alternate\"; type=\"text/plain\"; title=\"llms.txt\", </index.md>; rel=\"alternate\"; type=\"text/markdown\"; title=\"Markdown\""
+    Header merge Vary "Accept"
+  </FilesMatch>
+  <Files "server-card.json">
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, OPTIONS"
+    Header set Cache-Control "public, max-age=300, must-revalidate"
+  </Files>
 </IfModule>

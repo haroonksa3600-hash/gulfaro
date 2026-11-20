@@ -24,7 +24,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <div className="w-14 h-14 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center mx-auto">
             <Bookmark className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Saved Jobs &amp; Profile</h2>
+          <h1 className="text-xl font-bold text-slate-900">Saved Jobs &amp; Profile</h1>
           <p className="text-xs text-slate-600 leading-relaxed">
             Sign in to view your bookmarked job vacancies across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman.
           </p>

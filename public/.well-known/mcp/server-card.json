@@ -1,0 +1,170 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/server-card/v1.json",
+  "version": "1.0",
+  "protocolVersion": "2025-06-18",
+  "serverInfo": {
+    "name": "net.gulfaro/gcc-jobs-mcp",
+    "title": "Gulfaro GCC Jobs MCP Server",
+    "version": "1.0.0",
+    "description": "Read-only Model Context Protocol (MCP) server for searching and inspecting active public GCC job vacancies across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman on Gulfaro.",
+    "websiteUrl": "https://www.gulfaro.net"
+  },
+  "transport": {
+    "type": "streamable-http",
+    "url": "https://gulfaro.onrender.com/mcp",
+    "supportedProtocolVersions": [
+      "2025-06-18",
+      "2025-03-26",
+      "2024-11-05"
+    ]
+  },
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    }
+  },
+  "authentication": {
+    "type": "none",
+    "required": false
+  },
+  "tools": [
+    {
+      "name": "search_jobs",
+      "title": "Search Gulfaro GCC Jobs",
+      "description": "Search active, unexpired job vacancies across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman by keyword, country, city, category, or employment type. Read-only and returns only public job listings.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Optional keyword to match job title, company, skills, city, or description (max 120 characters)."
+          },
+          "country": {
+            "type": "string",
+            "enum": [
+              "all",
+              "saudi-arabia",
+              "uae",
+              "qatar",
+              "kuwait",
+              "bahrain",
+              "oman"
+            ],
+            "description": "Optional GCC country identifier or \"all\"."
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional city filter (e.g. Riyadh, Jeddah, Dubai, Abu Dhabi, Doha)."
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional job category slug or name (e.g. engineering, healthcare-medical, accounting-finance)."
+          },
+          "employmentType": {
+            "type": "string",
+            "enum": [
+              "full-time",
+              "part-time",
+              "contract",
+              "temporary",
+              "remote",
+              "walk-in"
+            ],
+            "description": "Optional employment type filter."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Maximum number of active jobs to return (1-25, default 10)."
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_job_details",
+      "title": "Get Gulfaro Job Details",
+      "description": "Retrieve full public details for a single active, unexpired Gulfaro job vacancy using its Job ID (e.g. GF-901) or URL slug. Read-only.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jobIdOrSlug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Public Gulfaro Job ID (e.g. GF-901) or URL slug."
+          }
+        },
+        "required": [
+          "jobIdOrSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "browse_jobs_by_country",
+      "title": "Browse Gulfaro Jobs by GCC Country",
+      "description": "Browse active, unexpired job listings and regional market metadata for one GCC country: saudi-arabia, uae, qatar, kuwait, bahrain, or oman. Read-only.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "country": {
+            "type": "string",
+            "enum": [
+              "saudi-arabia",
+              "uae",
+              "qatar",
+              "kuwait",
+              "bahrain",
+              "oman"
+            ],
+            "description": "Required GCC country slug: saudi-arabia, uae, qatar, kuwait, bahrain, or oman."
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional city filter within the selected country."
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional job category slug within the selected country."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Maximum number of active jobs to return (1-25, default 10)."
+          }
+        },
+        "required": [
+          "country"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "documentationUrl": "https://www.gulfaro.net/llms.txt"
+}

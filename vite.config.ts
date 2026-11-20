@@ -55,7 +55,17 @@ export default defineConfig(() => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           globIgnores: ['**/gulfaro-config.js'],
-          navigateFallbackDenylist: [/^\/api\/.*/, /^\/share\/.*/, /^\/sitemap\.xml$/, /^\/robots\.txt$/],
+          navigateFallbackDenylist: [
+            /^\/api\/.*/,
+            /^\/mcp$/,
+            /^\/share\/.*/,
+            /^\/\.well-known\/.*/,
+            /^\/sitemap\.xml$/,
+            /^\/robots\.txt$/,
+            /^\/llms\.txt$/,
+            /^\/index\.md$/,
+            /^\/ads\.txt$/
+          ],
           runtimeCaching: [
             {
               // Never cache runtime backend URL configuration so Hostinger updates apply immediately

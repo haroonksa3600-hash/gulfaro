@@ -11,6 +11,7 @@ Allow: /favicon.png
 Allow: /apple-touch-icon.png
 
 User-agent: *
+Content-Signal: search=yes, ai-train=no
 Allow: /
 Disallow: /api/
 Disallow: /super-admin

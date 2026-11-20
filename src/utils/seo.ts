@@ -1,6 +1,6 @@
 import { JobAd, GCC_COUNTRIES } from '../types/job';
 import { CareerArticle } from '../data/careerArticles';
-import { isJobActiveAndUnexpired } from '../data/gccDirectory';
+import { isJobActiveAndUnexpired, PUBLIC_JOB_CATEGORIES } from '../data/gccDirectory';
 
 export interface RouteSeoMetadata {
   title: string;
@@ -11,7 +11,36 @@ export interface RouteSeoMetadata {
   jsonLd?: Record<string, any> | null;
 }
 
+export interface BreadcrumbItem {
+  name: string;
+  path: string;
+}
+
+export interface FaqEntry {
+  question: string;
+  answer: string;
+}
+
 const PROD_ORIGIN = 'https://www.gulfaro.net';
+export const OFFICIAL_CONTACT_EMAIL = 'admingulfaro@gmail.com';
+
+export const VERIFIED_DEFAULT_FAQS: FaqEntry[] = [
+  {
+    question: 'Is Gulfaro free for Job Seekers?',
+    answer:
+      'Yes. Job seekers can read all vacancies, explore career guides, and contact employers directly via email or phone completely free of charge. Never pay any money for visas or interviews.'
+  },
+  {
+    question: 'How quickly do Employer job ads go live?',
+    answer:
+      'Registered employers publish job vacancies automatically after submitting the single-page posting form and passing automated security and anti-spam checks.'
+  },
+  {
+    question: 'How does Verified Employer status work?',
+    answer:
+      'All registered employer accounts on Gulfaro automatically receive the Verified Employer trust badge on their published job listings.'
+  }
+];
 
 export function getPublicOrigin(): string {
   if (typeof window !== 'undefined') {
@@ -74,7 +103,10 @@ function setRouteJsonLd(payload: Record<string, any> | null) {
 export function applyRouteSeo(meta: RouteSeoMetadata) {
   if (typeof document === 'undefined') return;
   const origin = getPublicOrigin();
-  const canonicalUrl = `${origin}${meta.canonicalPath.startsWith('/') ? meta.canonicalPath : `/${meta.canonicalPath}`}`;
+  const normalizedPath = meta.canonicalPath.startsWith('/')
+    ? meta.canonicalPath
+    : `/${meta.canonicalPath}`;
+  const canonicalUrl = `${origin}${normalizedPath}`;
   const ogImage = `${origin}/pwa-512x512.png`;
 
   document.title = meta.title;
@@ -94,11 +126,114 @@ export function applyRouteSeo(meta: RouteSeoMetadata) {
   setRouteJsonLd(meta.jsonLd || null);
 }
 
-export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
+export function buildOrganizationNode(options?: {
+  email?: string;
+  description?: string;
+}): Record<string, any> {
+  const origin = getPublicOrigin();
+  const contactEmail = (options?.email || OFFICIAL_CONTACT_EMAIL).trim() || OFFICIAL_CONTACT_EMAIL;
+  const orgDescription =
+    options?.description?.trim() ||
+    'Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.';
+
+  // Note: sameAs is intentionally omitted until verified official social profile URLs exist.
+  return {
+    '@type': 'Organization',
+    '@id': `${origin}/#organization`,
+    name: 'Gulfaro',
+    alternateName: 'Gulfaro GCC Jobs',
+    url: origin,
+    description: orgDescription,
+    logo: {
+      '@type': 'ImageObject',
+      url: `${origin}/pwa-512x512.png`,
+      width: 512,
+      height: 512
+    },
+    email: contactEmail,
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      email: contactEmail,
+      url: `${origin}/contact`,
+      areaServed: ['SA', 'AE', 'QA', 'KW', 'BH', 'OM'],
+      availableLanguage: ['English']
+    },
+    areaServed: [
+      { '@type': 'Country', name: 'Saudi Arabia' },
+      { '@type': 'Country', name: 'United Arab Emirates' },
+      { '@type': 'Country', name: 'Qatar' },
+      { '@type': 'Country', name: 'Kuwait' },
+      { '@type': 'Country', name: 'Bahrain' },
+      { '@type': 'Country', name: 'Oman' }
+    ]
+  };
+}
+
+export function buildWebSiteNode(): Record<string, any> {
+  const origin = getPublicOrigin();
+  return {
+    '@type': 'WebSite',
+    '@id': `${origin}/#website`,
+    url: origin,
+    name: 'Gulfaro',
+    alternateName: 'Gulfaro GCC Jobs',
+    publisher: {
+      '@id': `${origin}/#organization`
+    },
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${origin}/?q={search_term_string}`,
+      'query-input': 'required name=search_term_string'
+    }
+  };
+}
+
+export function buildBreadcrumbListNode(items: BreadcrumbItem[]): Record<string, any> {
+  const origin = getPublicOrigin();
+  return {
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, idx) => ({
+      '@type': 'ListItem',
+      position: idx + 1,
+      name: item.name,
+      item: `${origin}${item.path.startsWith('/') ? item.path : `/${item.path}`}`
+    }))
+  };
+}
+
+export function buildFaqPageNode(faqs: FaqEntry[]): Record<string, any> | null {
+  const cleanFaqs = faqs
+    .map(f => ({
+      question: String(f.question || '').trim(),
+      answer: String(f.answer || '').trim()
+    }))
+    .filter(f => f.question && f.answer);
+
+  if (cleanFaqs.length === 0) return null;
+
+  return {
+    '@type': 'FAQPage',
+    mainEntity: cleanFaqs.map(faq => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer
+      }
+    }))
+  };
+}
+
+export function buildJobPostingNode(job: JobAd): Record<string, any> | null {
   if (!isJobActiveAndUnexpired(job)) return null;
   if (!job.title || !job.description) return null;
 
+  const origin = getPublicOrigin();
   const countryInfo = GCC_COUNTRIES[job.country];
+  const categoryMeta = PUBLIC_JOB_CATEGORIES.find(c => c.slug === job.category || c.id === job.category);
+  const jobUrl = `${origin}/job/${job.slug || job.id}`;
+
   const employmentMap: Record<string, string> = {
     'full-time': 'FULL_TIME',
     'part-time': 'PART_TIME',
@@ -108,11 +243,24 @@ export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
     'walk-in': 'FULL_TIME'
   };
 
-  const schema: Record<string, any> = {
-    '@context': 'https://schema.org/',
+  const fullDescriptionParts = [job.description.trim()];
+  if (Array.isArray(job.responsibilities) && job.responsibilities.length > 0) {
+    fullDescriptionParts.push(`Responsibilities: ${job.responsibilities.join('; ')}`);
+  }
+  if (Array.isArray(job.requirements) && job.requirements.length > 0) {
+    fullDescriptionParts.push(`Requirements: ${job.requirements.join('; ')}`);
+  }
+  if (Array.isArray(job.benefits) && job.benefits.length > 0) {
+    fullDescriptionParts.push(`Benefits: ${job.benefits.join('; ')}`);
+  }
+
+  const node: Record<string, any> = {
     '@type': 'JobPosting',
+    '@id': `${jobUrl}#jobposting`,
     title: job.title,
-    description: job.description,
+    description: fullDescriptionParts.join('\n\n'),
+    url: jobUrl,
+    directApply: true,
     identifier: {
       '@type': 'PropertyValue',
       name: 'Gulfaro',
@@ -123,7 +271,7 @@ export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
     employmentType: employmentMap[job.employmentType] || 'FULL_TIME',
     hiringOrganization: {
       '@type': 'Organization',
-      name: job.company || 'Direct GCC Employer'
+      name: job.company?.trim() || 'Direct GCC Employer'
     },
     jobLocation: {
       '@type': 'Place',
@@ -136,12 +284,30 @@ export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
     }
   };
 
+  if (categoryMeta?.name || job.category) {
+    node.occupationalCategory = categoryMeta?.name || job.category;
+  }
+
+  if (job.experienceLevel) {
+    node.experienceRequirements = job.experienceLevel.replace(/-/g, ' ');
+  }
+
+  if (job.educationLevel) {
+    node.educationRequirements = job.educationLevel;
+  }
+
   if (job.workMode === 'remote') {
-    schema.jobLocationType = 'TELECOMMUTE';
+    node.jobLocationType = 'TELECOMMUTE';
+    if (countryInfo?.name) {
+      node.applicantLocationRequirements = {
+        '@type': 'Country',
+        name: countryInfo.name
+      };
+    }
   }
 
   if (job.salaryMin && job.salaryMin > 0) {
-    schema.baseSalary = {
+    node.baseSalary = {
       '@type': 'MonetaryAmount',
       currency: job.currency || countryInfo?.currencyCode || 'SAR',
       value: {
@@ -153,14 +319,15 @@ export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
     };
   }
 
-  return schema;
+  return node;
 }
 
-export function buildArticleSchema(article: CareerArticle): Record<string, any> {
+export function buildArticleNode(article: CareerArticle): Record<string, any> {
   const origin = getPublicOrigin();
+  const url = `${origin}/career-advice/${article.slug}`;
   return {
-    '@context': 'https://schema.org',
     '@type': 'Article',
+    '@id': `${url}#article`,
     headline: article.title,
     description: article.summary,
     author: {
@@ -168,26 +335,47 @@ export function buildArticleSchema(article: CareerArticle): Record<string, any> 
       name: 'Gulfaro Career Editorial Guide'
     },
     publisher: {
-      '@type': 'Organization',
-      name: 'Gulfaro',
-      logo: {
-        '@type': 'ImageObject',
-        url: `${origin}/pwa-512x512.png`
-      }
+      '@id': `${origin}/#organization`
     },
-    mainEntityOfPage: `${origin}/career-advice/${article.slug}`
+    mainEntityOfPage: url
+  };
+}
+
+export function buildSeoGraph(
+  extraNodes: Array<Record<string, any> | null | undefined> = [],
+  orgOptions?: { email?: string; description?: string }
+): Record<string, any> {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      buildOrganizationNode(orgOptions),
+      buildWebSiteNode(),
+      ...extraNodes.filter((node): node is Record<string, any> => Boolean(node))
+    ]
   };
 }
 
 export function buildOrganizationSchema(): Record<string, any> {
-  const origin = getPublicOrigin();
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Organization',
-    name: 'Gulfaro',
-    url: origin,
-    logo: `${origin}/pwa-512x512.png`,
-    email: 'admingulfaro@gmail.com',
-    areaServed: ['Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Bahrain', 'Oman']
-  };
+  return buildSeoGraph();
+}
+
+export function buildJobPostingSchema(job: JobAd): Record<string, any> | null {
+  const node = buildJobPostingNode(job);
+  if (!node) return null;
+  const countryInfo = GCC_COUNTRIES[job.country];
+  const breadcrumb = buildBreadcrumbListNode([
+    { name: 'Home', path: '/' },
+    { name: `${countryInfo?.name || 'GCC'} Jobs`, path: `/country/${job.country}` },
+    { name: job.title, path: `/job/${job.slug || job.id}` }
+  ]);
+  return buildSeoGraph([breadcrumb, node]);
+}
+
+export function buildArticleSchema(article: CareerArticle): Record<string, any> {
+  const breadcrumb = buildBreadcrumbListNode([
+    { name: 'Home', path: '/' },
+    { name: 'Career Advice', path: '/career-advice' },
+    { name: article.title, path: `/career-advice/${article.slug}` }
+  ]);
+  return buildSeoGraph([breadcrumb, buildArticleNode(article)]);
 }
