@@ -9,6 +9,8 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+export type PWAInstallPlatform = 'auto' | 'android' | 'ios';
+
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
@@ -16,11 +18,12 @@ export function usePWAInstall() {
   const [isAndroid, setIsAndroid] = useState<boolean>(false);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [modalPlatform, setModalPlatform] = useState<PWAInstallPlatform>('auto');
 
   useEffect(() => {
     // 1. Detect standalone mode
     const checkStandalone = () => {
-      const isStandaloneMode = 
+      const isStandaloneMode =
         window.matchMedia('(display-mode: standalone)').matches ||
         (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
         document.referrer.includes('android-app://');
@@ -31,9 +34,15 @@ export function usePWAInstall() {
     };
     checkStandalone();
 
-    // 2. Detect platform
+    // 2. Detect platform (including iPadOS 13+ reporting Macintosh with touch points)
     const ua = window.navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(ua) && !(window as unknown as { MSStream?: boolean }).MSStream;
+    const isIPadOS =
+      window.navigator.platform === 'MacIntel' &&
+      typeof window.navigator.maxTouchPoints === 'number' &&
+      window.navigator.maxTouchPoints > 1;
+    const isIOSDevice =
+      (/iphone|ipad|ipod/.test(ua) || isIPadOS) &&
+      !(window as unknown as { MSStream?: boolean }).MSStream;
     const isAndroidDevice = /android/.test(ua);
     setIsIOS(isIOSDevice);
     setIsAndroid(isAndroidDevice);
@@ -74,17 +83,20 @@ export function usePWAInstall() {
         console.warn('Install prompt error:', err);
       }
     } else {
-      // If native prompt is not available (e.g. iOS or already queued), show instructions modal
+      // If native prompt is not available, open instructions modal for Android/browser install
+      setModalPlatform('android');
       setIsModalOpen(true);
     }
   }, [deferredPrompt]);
 
-  const openModal = useCallback(() => {
+  const openModal = useCallback((platform: PWAInstallPlatform = 'auto') => {
+    setModalPlatform(platform);
     setIsModalOpen(true);
   }, []);
 
   const closeModal = useCallback(() => {
     setIsModalOpen(false);
+    setModalPlatform('auto');
   }, []);
 
   return {
@@ -95,6 +107,7 @@ export function usePWAInstall() {
     isAndroid,
     hasNativePrompt: !!deferredPrompt,
     isModalOpen,
+    modalPlatform,
     openModal,
     closeModal,
     promptInstall

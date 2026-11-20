@@ -61,6 +61,7 @@ export default function App() {
     isIOS,
     isAndroid,
     isModalOpen: isInstallModalOpen,
+    modalPlatform,
     openModal: openInstallModal,
     closeModal: closeInstallModal,
     promptInstall
@@ -1322,8 +1323,12 @@ export default function App() {
         activeTab={activeTab}
         savedCount={savedJobIds.length}
         employerJobCount={employerJobCount}
-        onOpenInstall={openInstallModal}
+        onInstallAndroid={promptInstall}
+        onOpenIOSInstall={() => openInstallModal('ios')}
         isAppInstalled={isPWAInstalled}
+        isIOSDevice={isIOS}
+        isAndroidDevice={isAndroid}
+        hasNativeInstallPrompt={hasNativePrompt}
       />
 
       <main className="flex-1">{renderMainBody()}</main>
@@ -1337,7 +1342,6 @@ export default function App() {
         onOpenPostJob={handleOpenPostJob}
         onOpenSafetyGuide={() => setIsSafetyModalOpen(true)}
         onOpenAuth={handleOpenAuth}
-        onOpenInstall={openInstallModal}
         currentUser={currentUser}
         cmsOverrides={publicConfig?.cms}
       />
@@ -1374,6 +1378,7 @@ export default function App() {
         isIOS={isIOS}
         isAndroid={isAndroid}
         isInstalled={isPWAInstalled}
+        platformOverride={modalPlatform}
       />
     </div>
   );

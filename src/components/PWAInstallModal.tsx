@@ -12,6 +12,8 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+import { PWAInstallPlatform } from '../hooks/usePWAInstall';
+
 interface PWAInstallModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -20,6 +22,7 @@ interface PWAInstallModalProps {
   isIOS: boolean;
   isAndroid: boolean;
   isInstalled: boolean;
+  platformOverride?: PWAInstallPlatform;
 }
 
 export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
@@ -28,10 +31,12 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   onInstall,
   hasNativePrompt,
   isIOS,
-  isAndroid,
-  isInstalled
+  isInstalled,
+  platformOverride = 'auto'
 }) => {
   if (!isOpen) return null;
+
+  const showIOSView = platformOverride === 'ios' || (platformOverride !== 'android' && isIOS);
 
   return (
     <div 
@@ -123,12 +128,12 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                 You can launch it directly from your device home screen or applications menu.
               </p>
             </div>
-          ) : isIOS ? (
+          ) : showIOSView ? (
             /* iOS Safari Step-by-Step Instructions */
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
               <p className="text-xs font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4" />
-                <span>How to Install on iPhone & iPad</span>
+                <span>How to Install on iPhone &amp; iPad</span>
               </p>
               <ol className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-center gap-2.5">
@@ -136,7 +141,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                     1
                   </span>
                   <span>
-                    Tap the <strong className="text-white">Share</strong> button in Safari's bottom toolbar (<Share className="w-3.5 h-3.5 inline text-teal-400 mx-0.5" />).
+                    Tap the <strong className="text-white">Share</strong> button in Safari&apos;s bottom toolbar (<Share className="w-3.5 h-3.5 inline text-teal-400 mx-0.5" />).
                   </span>
                 </li>
                 <li className="flex items-center gap-2.5">
@@ -144,7 +149,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                     2
                   </span>
                   <span>
-                    Scroll down and tap <strong className="text-white">"Add to Home Screen"</strong> (<PlusSquare className="w-3.5 h-3.5 inline text-teal-400 mx-0.5" />).
+                    Scroll down and tap <strong className="text-white">&quot;Add to Home Screen&quot;</strong> (<PlusSquare className="w-3.5 h-3.5 inline text-teal-400 mx-0.5" />).
                   </span>
                 </li>
                 <li className="flex items-center gap-2.5">
@@ -152,7 +157,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                     3
                   </span>
                   <span>
-                    Tap <strong className="text-white">"Add"</strong> in the top-right corner to finish.
+                    Tap <strong className="text-white">&quot;Add&quot;</strong> in the top-right corner to finish.
                   </span>
                 </li>
               </ol>
@@ -170,20 +175,30 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
               <ArrowRight className="w-4 h-4 text-slate-950 ml-1" />
             </button>
           ) : (
-            /* General Browser instructions */
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  onInstall();
-                }}
-                className="w-full flex items-center justify-center gap-2 py-3 px-5 bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white font-extrabold text-sm rounded-xl shadow-md transition-all active:scale-[0.98]"
-              >
-                <Download className="w-4 h-4" />
-                <span>Add to Home Screen</span>
-              </button>
-              <p className="text-[11px] text-slate-400 text-center">
-                Open your browser settings or menu (⋮) and select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.
+            /* Android / Browser Manual Install Instructions */
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <p className="text-xs font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4" />
+                <span>How to Install on Android</span>
               </p>
+              <ol className="space-y-2 text-xs text-slate-300">
+                <li className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-slate-800 text-teal-400 font-bold flex items-center justify-center text-[11px] shrink-0">
+                    1
+                  </span>
+                  <span>
+                    Open your browser menu (<strong className="text-white">⋮</strong>) in Chrome, Edge, or Samsung Internet.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-slate-800 text-teal-400 font-bold flex items-center justify-center text-[11px] shrink-0">
+                    2
+                  </span>
+                  <span>
+                    Select <strong className="text-white">&quot;Install app&quot;</strong> or <strong className="text-white">&quot;Add to Home screen&quot;</strong>.
+                  </span>
+                </li>
+              </ol>
             </div>
           )}
 

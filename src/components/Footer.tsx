@@ -10,7 +10,6 @@ interface FooterProps {
   onOpenPostJob: () => void;
   onOpenSafetyGuide: () => void;
   onOpenAuth?: (mode: 'login' | 'signup', preferredRole?: 'job_seeker' | 'employer') => void;
-  onOpenInstall?: () => void;
   currentUser?: User | null;
   cmsOverrides?: {
     logoUrl?: string;

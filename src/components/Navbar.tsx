@@ -17,9 +17,11 @@ import {
   Mail,
   ShieldCheck,
   UserPlus,
-  LayoutGrid
+  LayoutGrid,
+  Smartphone,
+  Download,
+  CheckCircle2
 } from 'lucide-react';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   currentPath: string;
@@ -34,8 +36,12 @@ interface NavbarProps {
   activeTab: string;
   savedCount: number;
   employerJobCount?: number;
-  onOpenInstall?: () => void;
+  onInstallAndroid?: () => void;
+  onOpenIOSInstall?: () => void;
   isAppInstalled?: boolean;
+  isIOSDevice?: boolean;
+  isAndroidDevice?: boolean;
+  hasNativeInstallPrompt?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -49,8 +55,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   savedCount,
   employerJobCount,
-  onOpenInstall,
-  isAppInstalled
+  onInstallAndroid,
+  onOpenIOSInstall,
+  isAppInstalled = false,
+  isIOSDevice = false,
+  isAndroidDevice = false,
+  hasNativeInstallPrompt = false
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -152,15 +162,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: Single Primary Action & Account / Mobile Toggle */}
+        {/* Zone 3: Single Primary Action & Account / Menu Toggle */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {onOpenInstall && !isAppInstalled && (
-            <PWAInstallButton
-              onClick={onOpenInstall}
-              variant="navbar"
-              isInstalled={isAppInstalled}
-            />
-          )}
 
           {currentUser?.role === 'employer' && (
             <button
@@ -261,10 +264,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Mobile Drawer Trigger */}
+          {/* Hamburger Menu Trigger (Mobile, Tablet & Desktop) */}
           <button
+            type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 shrink-0"
+            className="flex items-center justify-center w-9 h-9 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 shrink-0 cursor-pointer transition-colors"
             aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={isMobileMenuOpen}
           >
@@ -273,23 +277,23 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Backdrop */}
+      {/* Menu Backdrop */}
       <div
-        className={`fixed inset-0 bg-slate-950/80 z-50 transition-opacity duration-200 lg:hidden ${
+        className={`fixed inset-0 bg-slate-950/80 z-50 transition-opacity duration-200 ${
           isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => setIsMobileMenuOpen(false)}
         aria-hidden="true"
       />
 
-      {/* Mobile Navigation Drawer */}
+      {/* Responsive Hamburger Navigation Drawer (Mobile, Tablet & Desktop) */}
       <div
-        className={`fixed top-0 right-0 w-[86vw] max-w-sm h-full bg-slate-950 border-l border-slate-800 shadow-2xl z-50 flex flex-col transition-transform duration-200 lg:hidden ${
+        className={`fixed top-0 right-0 w-[86vw] max-w-sm h-full bg-slate-950 border-l border-slate-800 shadow-2xl z-50 flex flex-col transition-transform duration-200 ${
           isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label="Mobile Navigation"
+        aria-label="Navigation Menu"
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0">
           <button onClick={() => navigateClean('/')} className="focus:outline-none">
@@ -432,6 +436,120 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
               <ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
+          </div>
+
+          {/* Download Gulfaro App (Exclusive Location Inside Hamburger Menu) */}
+          <div className="pt-3 border-t border-slate-800 space-y-2.5" aria-label="Download Gulfaro App">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Download Gulfaro App</span>
+              </p>
+              {isAppInstalled ? (
+                <span className="text-[10px] font-semibold text-teal-300">Installed</span>
+              ) : (isAndroidDevice || isIOSDevice) ? (
+                <span className="text-[10px] font-semibold text-slate-400">
+                  {isAndroidDevice ? 'Android detected' : 'iPhone / iPad detected'}
+                </span>
+              ) : null}
+            </div>
+
+            {isAppInstalled ? (
+              <div className="p-3 rounded-xl bg-teal-950/40 border border-teal-800/60 flex items-center gap-2.5 text-xs text-teal-200">
+                <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
+                <span>Gulfaro App is installed on this device.</span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <p className="text-xs text-slate-300 leading-snug">
+                  {isAndroidDevice
+                    ? 'Install Gulfaro directly on your Android home screen for 1-tap job access.'
+                    : isIOSDevice
+                    ? 'Add Gulfaro to your iPhone or iPad home screen via Safari.'
+                    : 'Choose your mobile platform to install the Gulfaro Web App.'}
+                </p>
+
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onInstallAndroid?.();
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
+                      isAndroidDevice || (hasNativeInstallPrompt && !isIOSDevice)
+                        ? 'bg-teal-500 hover:bg-teal-400 text-slate-950 border-teal-400 font-bold'
+                        : 'bg-slate-950 hover:bg-slate-800 text-slate-100 border-slate-700 font-semibold'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <Download
+                        className={`w-4 h-4 shrink-0 ${
+                          isAndroidDevice || (hasNativeInstallPrompt && !isIOSDevice)
+                            ? 'text-slate-950'
+                            : 'text-teal-400'
+                        }`}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs leading-tight">Android</span>
+                        <span
+                          className={`block text-[10px] leading-tight ${
+                            isAndroidDevice || (hasNativeInstallPrompt && !isIOSDevice)
+                              ? 'text-slate-900/80 font-medium'
+                              : 'text-slate-400 font-normal'
+                          }`}
+                        >
+                          {hasNativeInstallPrompt ? 'Direct installation prompt' : 'Browser install guide'}
+                        </span>
+                      </span>
+                    </span>
+                    {isAndroidDevice && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-950/20 text-slate-950 shrink-0">
+                        Your Device
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onOpenIOSInstall?.();
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
+                      isIOSDevice
+                        ? 'bg-teal-500 hover:bg-teal-400 text-slate-950 border-teal-400 font-bold'
+                        : 'bg-slate-950 hover:bg-slate-800 text-slate-100 border-slate-700 font-semibold'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <Smartphone
+                        className={`w-4 h-4 shrink-0 ${
+                          isIOSDevice ? 'text-slate-950' : 'text-teal-400'
+                        }`}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs leading-tight">iPhone / iPad</span>
+                        <span
+                          className={`block text-[10px] leading-tight ${
+                            isIOSDevice
+                              ? 'text-slate-900/80 font-medium'
+                              : 'text-slate-400 font-normal'
+                          }`}
+                        >
+                          Safari Add to Home Screen
+                        </span>
+                      </span>
+                    </span>
+                    {isIOSDevice && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-950/20 text-slate-950 shrink-0">
+                        Your Device
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-3 border-t border-slate-800 space-y-2">
