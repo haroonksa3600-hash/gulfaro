@@ -1,6 +1,18 @@
 [
   {
     "actorType": "employer",
+    "actorId": "user-emp-2",
+    "emailOrUsername": "talent@fingulf-tech.example.com",
+    "event": "login_success",
+    "success": true,
+    "ip": "127.0.0.1",
+    "userAgent": "node",
+    "suspicious": false,
+    "id": "auth-1795198027136-4e7e4e",
+    "createdAt": "2026-11-20T18:07:07.136Z"
+  },
+  {
+    "actorType": "employer",
     "actorId": "usr-1795009566083-ptvq",
     "emailOrUsername": "citytest_1795009565979@example.com",
     "event": "register",

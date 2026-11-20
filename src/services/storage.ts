@@ -198,7 +198,12 @@ class StorageService {
             if (u && u.email) {
               const key = u.email.toLowerCase().trim();
               const existing = map.get(key);
-              map.set(key, { ...existing, ...u });
+              const merged = { ...existing, ...u };
+              map.set(key, {
+                ...merged,
+                emailVerified: true,
+                emailVerifiedAt: merged.emailVerifiedAt || merged.createdAt || new Date().toISOString()
+              });
             }
           });
           this.users = Array.from(map.values());
@@ -278,7 +283,14 @@ class StorageService {
     try {
       const storedUser = localStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_USER);
       if (storedUser) {
-        this.currentUser = JSON.parse(storedUser);
+        const parsedUser: User = JSON.parse(storedUser);
+        this.currentUser = parsedUser
+          ? {
+              ...parsedUser,
+              emailVerified: true,
+              emailVerifiedAt: parsedUser.emailVerifiedAt || parsedUser.createdAt || new Date().toISOString()
+            }
+          : null;
       } else {
         this.currentUser = null;
       }
@@ -982,7 +994,9 @@ class StorageService {
           this.setAuthToken(data.token);
         }
         const authenticatedUser: User = {
-          ...data.user
+          ...data.user,
+          emailVerified: data.user.emailVerified ?? true,
+          emailVerifiedAt: data.user.emailVerifiedAt || data.user.createdAt || new Date().toISOString()
         };
 
         let usersList: User[] = [];
@@ -1119,7 +1133,9 @@ class StorageService {
           this.setAuthToken(data.token);
         }
         const mergedUser: User = {
-          ...data.user
+          ...data.user,
+          emailVerified: data.user.emailVerified ?? true,
+          emailVerifiedAt: data.user.emailVerifiedAt || data.user.createdAt || new Date().toISOString()
         };
         const idx = this.users.findIndex(u => u.email.toLowerCase().trim() === emailNormalized);
         if (idx >= 0) {
@@ -1173,6 +1189,7 @@ class StorageService {
       }
     }
 
+    const nowIso = new Date().toISOString();
     const newUser: User = {
       ...userData,
       id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1180,7 +1197,9 @@ class StorageService {
       password: userData.password || 'password123',
       phone: (userData.phone || '').trim(),
       whatsapp: (userData.whatsapp || userData.phone || '').trim(),
-      createdAt: new Date().toISOString()
+      emailVerified: true,
+      emailVerifiedAt: nowIso,
+      createdAt: nowIso
     };
 
     usersList.push(newUser);

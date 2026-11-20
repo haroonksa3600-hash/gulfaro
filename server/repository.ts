@@ -131,6 +131,8 @@ const INITIAL_JSON_USERS: RepoUserRecord[] = [
     whatsapp: '+966501234567',
     country: 'saudi-arabia',
     city: 'Riyadh',
+    emailVerified: true,
+    emailVerifiedAt: '2026-09-01T00:00:00Z',
     createdAt: '2026-09-01T00:00:00Z'
   },
   {
@@ -145,6 +147,8 @@ const INITIAL_JSON_USERS: RepoUserRecord[] = [
     whatsapp: '+966548921104',
     country: 'saudi-arabia',
     city: 'Riyadh',
+    emailVerified: true,
+    emailVerifiedAt: '2026-08-15T00:00:00Z',
     createdAt: '2026-08-15T00:00:00Z'
   },
   {
@@ -159,6 +163,8 @@ const INITIAL_JSON_USERS: RepoUserRecord[] = [
     whatsapp: '+971508219402',
     country: 'uae',
     city: 'Dubai',
+    emailVerified: true,
+    emailVerifiedAt: '2026-08-20T00:00:00Z',
     createdAt: '2026-08-20T00:00:00Z'
   },
   {
@@ -169,6 +175,8 @@ const INITIAL_JSON_USERS: RepoUserRecord[] = [
     role: 'admin',
     country: 'saudi-arabia',
     city: 'Riyadh',
+    emailVerified: true,
+    emailVerifiedAt: '2026-01-01T00:00:00Z',
     createdAt: '2026-01-01T00:00:00Z'
   }
 ];
@@ -842,21 +850,28 @@ export async function syncEmployerVerifiedOnJobs(userId: string, _email: string,
 
 /**
  * Idempotent migration/backfill:
- * - Marks all existing employer accounts as Verified Employer (emailVerified: true)
- *   without changing job_seeker accounts or reassigning any job.userId.
+ * - Automatically marks ALL existing registered Job Seeker, Employer, and Admin
+ *   accounts as verified (emailVerified: true) without deleting accounts,
+ *   modifying passwords/credentials, or altering job postings.
  * - Ensures jobs linked via userId to an employer/admin carry isEmployerVerified: true.
  */
 export async function ensureExistingEmployersVerifiedBackfill(): Promise<{
+  accountsUpdated: number;
   employersUpdated: number;
   jobsUpdated: number;
 }> {
   if (!isPostgresEnabled()) {
     const users = readUsersJson();
     const nowIso = new Date().toISOString();
+    let accountsUpdated = 0;
     let employersUpdated = 0;
     const nextUsers = users.map(u => {
-      if (u.role === 'employer' && !u.emailVerified) {
-        employersUpdated++;
+      const isSupportedRole = u.role === 'job_seeker' || u.role === 'employer' || u.role === 'admin';
+      if (isSupportedRole && u.emailVerified !== true) {
+        accountsUpdated++;
+        if (u.role === 'employer') {
+          employersUpdated++;
+        }
         return {
           ...u,
           emailVerified: true,
@@ -865,7 +880,7 @@ export async function ensureExistingEmployersVerifiedBackfill(): Promise<{
       }
       return u;
     });
-    if (employersUpdated > 0) {
+    if (accountsUpdated > 0) {
       writeUsersJson(nextUsers);
     }
 
@@ -886,15 +901,18 @@ export async function ensureExistingEmployersVerifiedBackfill(): Promise<{
     if (jobsUpdated > 0) {
       writeJobsJson(nextJobs);
     }
-    return { employersUpdated, jobsUpdated };
+    return { accountsUpdated, employersUpdated, jobsUpdated };
   }
+
+  await dbQuery(`ALTER TABLE public.users ALTER COLUMN email_verified SET DEFAULT TRUE`).catch(() => {});
 
   const usersRes = await dbQuery(
     `UPDATE public.users
      SET email_verified = TRUE,
          email_verified_at = COALESCE(email_verified_at, created_at, NOW()),
          updated_at = NOW()
-     WHERE role = 'employer' AND email_verified IS DISTINCT FROM TRUE`
+     WHERE role IN ('job_seeker', 'employer', 'admin')
+       AND email_verified IS DISTINCT FROM TRUE`
   );
   const jobsRes = await dbQuery(
     `UPDATE public.jobs AS j
@@ -905,11 +923,15 @@ export async function ensureExistingEmployersVerifiedBackfill(): Promise<{
        AND u.role IN ('employer', 'admin')
        AND j.is_employer_verified IS DISTINCT FROM TRUE`
   );
+  const accountsUpdated = usersRes.rowCount || 0;
   return {
-    employersUpdated: usersRes.rowCount || 0,
+    accountsUpdated,
+    employersUpdated: accountsUpdated,
     jobsUpdated: jobsRes.rowCount || 0
   };
 }
+
+export const ensureAllAccountsVerifiedBackfill = ensureExistingEmployersVerifiedBackfill;
 
 // --- Verification Codes & Reset Tokens ---
 

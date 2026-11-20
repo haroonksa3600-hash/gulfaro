@@ -431,8 +431,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
       },
       {
         id: 'faq-3',
-        question: 'How does Verified Employer status work?',
-        answer: 'All registered employer accounts on Gulfaro automatically receive the Verified Employer trust badge on their published job listings.'
+        question: 'How does automatic account verification work?',
+        answer: 'All registered Job Seeker and Employer accounts on Gulfaro are automatically verified upon registration, with immediate dashboard access and Verified account status.'
       }
     ],
     termsContent: 'Employers and agencies are strictly prohibited from demanding recruitment fees, visa charges, or interview processing payments from candidates. All listings must reflect genuine vacancies.',

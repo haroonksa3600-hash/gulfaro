@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS users (
     professional_title VARCHAR(255),
     headline VARCHAR(255),
     bio TEXT,
-    email_verified BOOLEAN DEFAULT FALSE,
+    email_verified BOOLEAN DEFAULT TRUE,
     email_verified_at TIMESTAMP NULL,
     
     -- Metadata

@@ -166,9 +166,15 @@ function isAllowedCorsOrigin(origin: string): boolean {
 
 async function startServer() {
   initializeSuperAdminStores();
-  await ensureExistingEmployersVerifiedBackfill().catch(err => {
-    console.warn('[Gulfaro Startup Backfill] Failed to backfill employer verification:', err?.message || err);
+  const backfillResult = await ensureExistingEmployersVerifiedBackfill().catch(err => {
+    console.warn('[Gulfaro Startup Backfill] Failed to backfill account verification:', err?.message || err);
+    return null;
   });
+  if (backfillResult && (backfillResult.accountsUpdated > 0 || backfillResult.jobsUpdated > 0)) {
+    console.log(
+      `[Gulfaro Startup Backfill] Auto-verified ${backfillResult.accountsUpdated} existing account(s) and ${backfillResult.jobsUpdated} job listing(s).`
+    );
+  }
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -473,7 +479,7 @@ async function startServer() {
     delete copy.password;
     delete copy.passwordHash;
     delete copy.accessKeyHash;
-    if (copy.role === 'employer') {
+    if (copy.role === 'employer' || copy.role === 'job_seeker' || copy.role === 'admin') {
       copy.emailVerified = true;
       copy.emailVerifiedAt = copy.emailVerifiedAt || copy.createdAt;
     }
@@ -667,7 +673,7 @@ async function startServer() {
         user.passwordHash = hashPassword(password);
         user.password = undefined;
       }
-      if (user.role === 'employer' && !user.emailVerified) {
+      if (user.emailVerified !== true) {
         user.emailVerified = true;
         user.emailVerifiedAt = user.emailVerifiedAt || user.createdAt || new Date().toISOString();
       }
@@ -883,7 +889,6 @@ async function startServer() {
         const accessKeyHash = await hashAccessKey(rawAccessKey);
 
         const nowIso = new Date().toISOString();
-        const isEmployerAutoVerified = role === 'employer';
 
         const newUser: UserRecord = {
           id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -904,8 +909,8 @@ async function startServer() {
           lockoutUntil: null,
           status: 'active',
           createdAt: nowIso,
-          emailVerified: isEmployerAutoVerified,
-          emailVerifiedAt: isEmployerAutoVerified ? nowIso : undefined
+          emailVerified: true,
+          emailVerifiedAt: nowIso
         };
 
         try {

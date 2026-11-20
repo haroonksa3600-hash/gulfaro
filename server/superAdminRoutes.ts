@@ -811,7 +811,7 @@ export function createSuperAdminRouter(): express.Router {
 
       const validRole = role === 'employer' ? 'employer' : 'job_seeker';
       const nowIso = new Date().toISOString();
-      const autoVerified = validRole === 'employer' ? true : Boolean(emailVerified);
+      const autoVerified = true;
       const newUser: any = {
         id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: name.trim(),
@@ -828,7 +828,7 @@ export function createSuperAdminRouter(): express.Router {
         passwordHash: hashPassword(password),
         status: 'active',
         emailVerified: autoVerified,
-        emailVerifiedAt: autoVerified ? nowIso : undefined,
+        emailVerifiedAt: nowIso,
         createdAt: nowIso
       };
 

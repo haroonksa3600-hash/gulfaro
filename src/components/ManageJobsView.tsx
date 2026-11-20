@@ -23,7 +23,8 @@ import {
   Building, 
   Sparkles,
   ArrowUpDown,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 
 interface ManageJobsViewProps {
@@ -128,11 +129,23 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
               <span>/</span>
               <span className="text-teal-700 font-bold">My Job Posts</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-              <Briefcase className="w-7 h-7 text-teal-600 shrink-0" />
-              <span>Manage Job Advertisements</span>
-            </h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+                <Briefcase className="w-7 h-7 text-teal-600 shrink-0" />
+                <span>Manage Job Advertisements</span>
+              </h1>
+              {currentUser && currentUser.emailVerified !== false && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  title="Verified Gulfaro Employer Account"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Verified</span>
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 mt-1">
+              {currentUser?.companyName ? `${currentUser.companyName} · ` : ''}
               Review, edit, renew, or remove your live 30-day GCC job classifieds and track applicant volume.
             </p>
           </div>

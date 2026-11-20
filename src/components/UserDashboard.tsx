@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User, JobAd, GCC_COUNTRIES } from '../types/job';
 import { storageService } from '../services/storage';
-import { UserPlus, Bookmark } from 'lucide-react';
+import { UserPlus, Bookmark, ShieldCheck } from 'lucide-react';
 
 interface UserDashboardProps {
   currentUser: User | null;
@@ -63,6 +63,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 uppercase tracking-wide">
                   {currentUser.role.replace('_', ' ')}
                 </span>
+                {currentUser.emailVerified !== false && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    title="Verified Gulfaro Account"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Verified</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 {currentUser.city}, {GCC_COUNTRIES[currentUser.country]?.name} · {currentUser.email}

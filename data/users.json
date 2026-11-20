@@ -14,7 +14,9 @@
     "passwordHash": "pbkdf2$f57d8a660daec5a14c9875d86174a655$5cbd6de991e37ea3b4b6fa9150b635eca6e1276648a57f77ecf39bb0a695d93bb8168691ea960925b0d2024354b04ef5303c60d0aaaddb3a2c7ae482084a6b70",
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "loginFailedAttempts": 0,
+    "loginLockoutUntil": null
   },
   {
     "id": "user-emp-1",
@@ -39,7 +41,6 @@
     "id": "user-emp-2",
     "name": "Sarah Jenkins",
     "email": "talent@fingulf-tech.example.com",
-    "password": "password123",
     "role": "employer",
     "companyName": "FinGulf Technologies FZ-LLC",
     "companyType": "direct-employer",
@@ -52,7 +53,12 @@
     "emailVerifiedAt": "2026-08-20T00:00:00Z",
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "passwordHash": "pbkdf2$1c021a8faec36f11559ebadc75836ff3$3bb15da51457eff51dbace6eb50d5f2baf8d8fb962cf3c15aaf0ac334c068934b024736783d1a585df847ea77a79d810a2a8a63db69708a2753ee86b832f5ff4",
+    "loginFailedAttempts": 0,
+    "loginLockoutUntil": null,
+    "lastLoginAt": "2026-11-20T18:07:07.135Z",
+    "lastLoginIp": "127.0.0.1"
   },
   {
     "id": "user-admin-1",
@@ -229,10 +235,11 @@
     "headline": "Civil Engineer",
     "passwordHash": "pbkdf2$bcab5501b18eb2af57534005a02cc2f7$2522e0aab675546a2561d55f420469973e251f7bdcfddc9efb445f99150b85a9114331fff5d5e7b98813ff8f6820fcec06970ab2ca0cc2bc86ea32a3fb828c60",
     "createdAt": "2026-11-11T11:38:34.135Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:38:34.135Z"
   },
   {
     "id": "usr-1794397114146-bz4m",
@@ -287,10 +294,11 @@
     "headline": "Senior Mechanical Engineer",
     "passwordHash": "pbkdf2$c49fe475c35f31c30f360d8955fea8f7$e8ab37ecadf5aea09d5ebb8effaf20f66cd58790bb3c0bc17916e0caabeb380edfcd57dab27b16757b66b1c5c8bbc3a39450685b7967318b4990834d3349b681",
     "createdAt": "2026-11-11T11:39:59.867Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:39:59.867Z"
   },
   {
     "id": "usr-1794397199873-gyyo",
@@ -326,10 +334,11 @@
     "password": "Password123",
     "passwordHash": "pbkdf2$e51efcfbe08c77d1af51a1a654e9c86f$62e19a68ec0547dbc2419477b16578ba181e9b8446abf3f2c233b3d49ac6b0fc784ac8991fa4e048a0e0aab8b3a39127149c5a519d37d176239fa1301a463685",
     "createdAt": "2026-11-11T11:50:20.893Z",
-    "emailVerified": false,
+    "emailVerified": true,
     "accessKeyHash": "$2b$10$p76Uy/XT2pbCp/N7Q4P/xOUknQRB3v9M1FmNKCPAOFoHIA9nqgzFm",
     "failedAttempts": 0,
-    "lockoutUntil": null
+    "lockoutUntil": null,
+    "emailVerifiedAt": "2026-11-11T11:50:20.893Z"
   },
   {
     "id": "usr-1794484018589-h904",
@@ -348,6 +357,7 @@
     "failedAttempts": 3,
     "lockoutUntil": 1794484931943,
     "createdAt": "2026-11-12T11:46:58.656Z",
-    "emailVerified": false
+    "emailVerified": true,
+    "emailVerifiedAt": "2026-11-12T11:46:58.656Z"
   }
 ]

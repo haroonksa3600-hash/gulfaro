@@ -196,7 +196,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               {showUserMenu && (
                 <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-2 z-50 text-slate-200">
                   <div className="px-4 py-2.5 border-b border-slate-800">
-                    <p className="font-bold text-sm text-white truncate">{currentUser.name}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold text-sm text-white truncate">{currentUser.name}</p>
+                      {currentUser.emailVerified !== false && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                          <span>Verified</span>
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
                     <p className="text-[11px] text-teal-400 font-semibold uppercase mt-1">
                       {currentUser.role.replace('_', ' ')}
@@ -315,7 +323,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {currentUser.name.charAt(0)}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-bold text-white truncate">{currentUser.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-bold text-white truncate">{currentUser.name}</p>
+                  {currentUser.emailVerified !== false && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      <span>Verified</span>
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
               </div>
             </div>

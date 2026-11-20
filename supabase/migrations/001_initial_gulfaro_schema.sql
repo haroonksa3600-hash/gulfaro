@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   lockout_until TIMESTAMPTZ NULL,
   login_failed_attempts INTEGER NOT NULL DEFAULT 0,
   login_lockout_until TIMESTAMPTZ NULL,
-  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  email_verified BOOLEAN NOT NULL DEFAULT TRUE,
   email_verified_at TIMESTAMPTZ NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'banned', 'deactivated', 'pending_deletion')),
   suspension_reason TEXT,

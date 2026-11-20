@@ -127,7 +127,7 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
           <label className="flex items-center justify-between cursor-pointer">
             <div>
               <span className="font-semibold text-slate-800 block">Allow Job Seeker Registrations</span>
-              <span className="text-[11px] text-slate-500">New Job Seeker accounts activate automatically.</span>
+              <span className="text-[11px] text-slate-500">New Job Seeker accounts are automatically verified and activated upon signup.</span>
             </div>
             <input
               type="checkbox"
@@ -140,7 +140,7 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
           <label className="flex items-center justify-between cursor-pointer">
             <div>
               <span className="font-semibold text-slate-800 block">Allow Employer Registrations</span>
-              <span className="text-[11px] text-slate-500">New Employer accounts activate automatically upon registration.</span>
+              <span className="text-[11px] text-slate-500">New Employer accounts are automatically verified and activated upon signup.</span>
             </div>
             <input
               type="checkbox"
@@ -171,8 +171,8 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
                 onChange={e => setRegistration({ ...registration, emailVerificationMode: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50"
               >
-                <option value="automatic">Automatic Activation</option>
-                <option value="required_for_badge">Required for Verified Badge</option>
+                <option value="automatic">Automatic Verification & Activation</option>
+                <option value="required_for_badge">Automatic (Legacy Mode)</option>
                 <option value="optional">Optional</option>
               </select>
             </div>

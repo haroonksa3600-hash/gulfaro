@@ -262,7 +262,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         return;
       }
 
-      setSuccessMsg('Account created successfully! Saving to database and logging you in...');
+      setSuccessMsg('Account created and verified automatically! Logging you in...');
       setTimeout(() => {
         onAuthSuccess(res.user!);
       }, 400);
@@ -537,7 +537,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <form onSubmit={handleSignupSubmit} className="space-y-3.5 text-xs">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Create an Account</h3>
-                  <p className="text-slate-500 text-xs">Select your account type to continue</p>
+                  <p className="text-slate-500 text-xs">Select your account type — accounts are verified automatically upon signup</p>
                 </div>
 
                 {/* Account Type Selector: "I am a Job Seeker" vs "I am an Employer" */}
