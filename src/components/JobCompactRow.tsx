@@ -1,6 +1,7 @@
 import React from 'react';
 import { JobAd, GCC_COUNTRIES } from '../types/job';
 import { storageService } from '../services/storage';
+import { buildTelHref } from '../utils/phoneContact';
 import { Mail, PhoneCall, Bookmark, ShieldCheck } from 'lucide-react';
 
 interface JobCompactRowProps {
@@ -35,6 +36,9 @@ export const JobCompactRow: React.FC<JobCompactRowProps> = ({
 
   const isFeatured = job.packageType === 'sponsored' || job.isFeatured;
   const isEmployerVerified = storageService.isEmployerVerified(job);
+  const showEmailContact = Boolean(job.contactEmail) && job.contactMethod !== 'phone';
+  const showPhoneContact = Boolean(job.contactPhone) && job.contactMethod !== 'email';
+  const telHref = showPhoneContact ? buildTelHref(job.contactPhone) : null;
 
   const postDate = new Date(job.postedAt);
   const formattedDate = postDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -93,7 +97,7 @@ export const JobCompactRow: React.FC<JobCompactRowProps> = ({
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-        {job.contactEmail && (
+        {showEmailContact && (
           <a
             href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
             title="Direct Email"
@@ -103,9 +107,9 @@ export const JobCompactRow: React.FC<JobCompactRowProps> = ({
           </a>
         )}
 
-        {job.contactPhone && (
+        {showPhoneContact && telHref && (
           <a
-            href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
+            href={telHref}
             title="Direct Call"
             className="p-1.5 text-slate-500 hover:bg-slate-100 rounded transition-colors"
           >

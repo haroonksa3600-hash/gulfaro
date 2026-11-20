@@ -4,6 +4,7 @@ import { apiUrl } from '../services/apiConfig';
 import { getJobCategoryName, jobMatchesCategoryFilter } from '../data/categories';
 import { isJobActiveAndUnexpired } from '../data/gccDirectory';
 import { storageService } from '../services/storage';
+import { buildTelHref, buildWhatsAppChatUrl } from '../utils/phoneContact';
 import { AdBanner } from './AdBanner';
 import {
   PhoneCall,
@@ -455,12 +456,14 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
             {(() => {
               const showEmail = Boolean(job.contactEmail) && job.contactMethod !== 'phone';
               const showPhone = Boolean(job.contactPhone) && job.contactMethod !== 'email';
+              const whatsappHref = showPhone ? buildWhatsAppChatUrl(job.contactPhone) : null;
+              const telHref = showPhone ? buildTelHref(job.contactPhone) : null;
               const contactInstruction =
                 showEmail && !showPhone
                   ? 'Send your CV and cover note directly to the employer via email.'
                   : !showEmail && showPhone
-                  ? 'Contact the employer directly by phone number regarding this vacancy.'
-                  : 'Send your CV and cover note directly to the employer via email or telephone.';
+                  ? 'Contact the employer directly via WhatsApp or phone call regarding this vacancy.'
+                  : 'Send your CV and cover note directly to the employer via email, WhatsApp, or phone call.';
 
               return (
                 <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20 space-y-4">
@@ -477,33 +480,57 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                   </div>
 
                   {isActiveListing ? (
-                    <>
+                    <div className="space-y-2.5">
                       {showEmail && (
                         <a
                           href={`mailto:${job.contactEmail}?subject=${encodeURIComponent(`Application for ${job.title} (Ref: ${job.id})`)}`}
                           onClick={() => storageService.incrementInquiries(job.id)}
-                          className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl transition-colors text-sm"
+                          className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 min-h-[44px] rounded-xl transition-colors text-sm"
                         >
-                          <Mail className="w-4 h-4" />
+                          <Mail className="w-4 h-4 shrink-0" />
                           <span>Apply via Direct Email</span>
                         </a>
                       )}
 
-                      {showPhone && (
-                        <a
-                          href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
-                          onClick={() => storageService.incrementInquiries(job.id)}
-                          className={`w-full flex items-center justify-center gap-2 font-bold py-3 px-4 rounded-xl transition-colors ${
-                            !showEmail
-                              ? 'bg-teal-600 hover:bg-teal-700 text-white text-sm'
-                              : 'bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2.5'
-                          }`}
-                        >
-                          <PhoneCall className={`w-4 h-4 ${!showEmail ? 'text-white' : 'text-teal-400'}`} />
-                          <span>Call: {job.contactPhone}</span>
-                        </a>
+                      {showPhone && (whatsappHref || telHref) && (
+                        <div className="space-y-2.5">
+                          {whatsappHref && (
+                            <a
+                              href={whatsappHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => storageService.incrementInquiries(job.id)}
+                              className="w-full flex items-center justify-center gap-2 bg-[#16a34a] hover:bg-[#15803d] active:scale-[0.99] text-white font-bold py-3 px-4 min-h-[44px] rounded-xl shadow-xs transition-all text-sm"
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                className="w-4 h-4 shrink-0"
+                                aria-hidden="true"
+                              >
+                                <path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.47 0 .11 5.36.11 11.95c0 2.1.55 4.16 1.6 5.97L0 24l6.25-1.64a11.93 11.93 0 0 0 5.81 1.48h.01c6.59 0 11.95-5.36 11.95-11.95 0-3.19-1.24-6.19-3.5-8.41ZM12.07 21.82h-.01a9.89 9.89 0 0 1-5.04-1.38l-.36-.21-3.71.97.99-3.62-.24-.37a9.86 9.86 0 0 1-1.52-5.26c0-5.46 4.44-9.9 9.9-9.9 2.64 0 5.13 1.03 7 2.9a9.82 9.82 0 0 1 2.89 7c0 5.46-4.44 9.9-9.9 9.9Zm5.43-7.42c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.05 1.02-1.05 2.49s1.07 2.89 1.22 3.09c.15.2 2.11 3.22 5.11 4.52.71.31 1.27.49 1.7.63.72.23 1.37.2 1.88.12.57-.09 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35Z" />
+                              </svg>
+                              <span>WhatsApp</span>
+                            </a>
+                          )}
+
+                          {telHref && (
+                            <a
+                              href={telHref}
+                              onClick={() => storageService.incrementInquiries(job.id)}
+                              className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white border border-slate-800 font-semibold py-2.5 px-4 min-h-[44px] rounded-xl transition-all text-sm"
+                            >
+                              <PhoneCall className="w-4 h-4 text-teal-400 shrink-0" />
+                              <span>Call</span>
+                            </a>
+                          )}
+
+                          <p className="text-[11px] text-slate-500 leading-snug text-center">
+                            If WhatsApp is unavailable on this number, tap Call to dial directly.
+                          </p>
+                        </div>
                       )}
-                    </>
+                    </div>
                   ) : (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
                       Applications for this vacancy are closed because the deadline has passed.

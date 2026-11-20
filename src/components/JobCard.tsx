@@ -3,6 +3,7 @@ import { JobAd, GCC_COUNTRIES } from '../types/job';
 import { getJobCategoryName } from '../data/categories';
 import { isJobActiveAndUnexpired } from '../data/gccDirectory';
 import { storageService } from '../services/storage';
+import { buildTelHref } from '../utils/phoneContact';
 import {
   Clock,
   Bookmark,
@@ -193,9 +194,9 @@ export const JobCard: React.FC<JobCardProps> = ({
             </a>
           )}
 
-          {showPhoneContact && (
+          {showPhoneContact && buildTelHref(job.contactPhone) && (
             <a
-              href={`tel:${job.contactPhone.replace(/\s+/g, '')}`}
+              href={buildTelHref(job.contactPhone)!}
               className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs px-2.5 py-1.5 rounded-lg transition-colors"
               title={`Call ${job.contactPhone}`}
             >
