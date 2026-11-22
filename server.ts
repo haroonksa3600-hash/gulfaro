@@ -16,11 +16,8 @@ import {
   verifyResetTokenRecord,
   completePasswordReset,
   phonesMatch,
-  cleanPhone,
-  hashAccessKey,
   verifyAccessKeyAndGenerateToken,
   resetPasswordWithJwt,
-  sendPlatformEmail,
   issueUserSessionToken,
   verifyUserSessionToken,
   UserRecord
@@ -29,21 +26,17 @@ import { initializeSuperAdminStores } from './server/superAdminStore';
 import {
   appendAuthHistoryEntry,
   appendSystemErrorEntry,
-  createUserTransactional,
   deleteJobById,
-  ensureExistingEmployersVerifiedBackfill,
   findUserByEmail,
   findUserById,
   getAdmins,
   getAdminSessions,
-  getApplications,
   getJobs,
   getMarketplaceConfig,
   getMonetization,
   getReports,
   getSiteSettings,
   getUsers,
-  saveApplications,
   saveReports,
   saveUser,
   upsertJob
@@ -173,15 +166,6 @@ function isAllowedCorsOrigin(origin: string): boolean {
 
 async function startServer() {
   initializeSuperAdminStores();
-  const backfillResult = await ensureExistingEmployersVerifiedBackfill().catch(err => {
-    console.warn('[Gulfaro Startup Backfill] Failed to backfill account verification:', err?.message || err);
-    return null;
-  });
-  if (backfillResult && (backfillResult.accountsUpdated > 0 || backfillResult.jobsUpdated > 0)) {
-    console.log(
-      `[Gulfaro Startup Backfill] Auto-verified ${backfillResult.accountsUpdated} existing account(s) and ${backfillResult.jobsUpdated} job listing(s).`
-    );
-  }
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -296,17 +280,10 @@ async function startServer() {
     }
   });
 
-  app.get('/api/applications', async (req: Request, res: Response) => {
-    try {
-      const apps = await getApplications();
-      const { userId, jobId } = req.query;
-      let filtered = apps;
-      if (userId) filtered = filtered.filter(a => a.applicantUserId === String(userId));
-      if (jobId) filtered = filtered.filter(a => a.jobId.toLowerCase() === String(jobId).toLowerCase());
-      res.json(filtered);
-    } catch {
-      res.status(500).json({ error: 'Failed to retrieve applications.' });
-    }
+  app.get('/api/applications', (_req: Request, res: Response) => {
+    return res.status(410).json({
+      error: 'This legacy applications endpoint is no longer available. Online application and CV submission through Gulfaro has been removed.'
+    });
   });
 
   app.post('/api/applications', (_req: Request, res: Response) => {
@@ -315,19 +292,10 @@ async function startServer() {
     });
   });
 
-  app.patch('/api/applications/:id', async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      const { status } = req.body || {};
-      const apps = await getApplications();
-      const idx = apps.findIndex(a => a.id === id);
-      if (idx === -1) return res.status(404).json({ error: 'Application not found.' });
-      if (status) apps[idx].status = status;
-      await saveApplications(apps);
-      res.json({ success: true, application: apps[idx] });
-    } catch {
-      res.status(500).json({ error: 'Failed to update application.' });
-    }
+  app.patch('/api/applications/:id', (_req: Request, res: Response) => {
+    return res.status(410).json({
+      error: 'This legacy applications endpoint is no longer available. Online application and CV submission through Gulfaro has been removed.'
+    });
   });
 
   // Health check
@@ -501,10 +469,8 @@ async function startServer() {
     delete copy.password;
     delete copy.passwordHash;
     delete copy.accessKeyHash;
-    if (copy.role === 'employer' || copy.role === 'job_seeker' || copy.role === 'admin') {
-      copy.emailVerified = true;
-      copy.emailVerifiedAt = copy.emailVerifiedAt || copy.createdAt;
-    }
+    copy.emailVerified = Boolean(u.emailVerified);
+    copy.emailVerifiedAt = u.emailVerifiedAt;
     return copy;
   }
 
@@ -547,7 +513,7 @@ async function startServer() {
       const verified = verifyUserSessionToken(userToken);
       if (verified.valid && verified.userId) {
         const user = await findUserById(verified.userId);
-        if (user && (user.status || 'active') === 'active') {
+        if (user && (user.status || 'active') === 'active' && user.emailVerified === true) {
           if (!user.forceLogoutBefore || (verified.iatMs ?? 0) >= user.forceLogoutBefore) {
             return {
               isAdmin: user.role === 'admin',
@@ -592,9 +558,6 @@ async function startServer() {
 
     return null;
   }
-
-  // In-process serialized queue to prevent simultaneous duplicate registrations in JSON mode
-  let registrationQueue: Promise<any> = Promise.resolve();
 
   // Secure user login verification (Email Address & Password ONLY)
   app.post('/api/auth/login', async (req: Request, res: Response) => {
@@ -690,14 +653,28 @@ async function startServer() {
         });
       }
 
+      if (user.emailVerified !== true) {
+        await appendAuthHistoryEntry({
+          actorType: user.role === 'employer' ? 'employer' : 'user',
+          actorId: user.id,
+          emailOrUsername: user.email,
+          event: 'login_failed',
+          success: false,
+          ip,
+          userAgent,
+          reason: 'Email not verified',
+          suspicious: false
+        });
+        return res.status(403).json({
+          error: 'Please verify your email address before signing in.',
+          code: 'EMAIL_NOT_VERIFIED'
+        });
+      }
+
       // Upgrade legacy plain-text password to PBKDF2 hash on successful login
       if (!user.passwordHash && user.password) {
         user.passwordHash = hashPassword(password);
         user.password = undefined;
-      }
-      if (user.emailVerified !== true) {
-        user.emailVerified = true;
-        user.emailVerifiedAt = user.emailVerifiedAt || user.createdAt || new Date().toISOString();
       }
       user.loginFailedAttempts = 0;
       user.loginLockoutUntil = null;
@@ -767,221 +744,11 @@ async function startServer() {
     }
   });
 
-  // Register new user (Serialized queue + PostgreSQL unique constraints to prevent duplicates)
-  app.post('/api/auth/register', (req: Request, res: Response) => {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    const userAgent = (req.headers['user-agent'] || '').slice(0, 200);
-    registrationQueue = registrationQueue.then(async () => {
-      try {
-        const settings = await getSiteSettings();
-        if (settings.emergency.maintenanceMode || settings.emergency.emergencyShutdown) {
-          return res.status(503).json({
-            error: 'New registrations are temporarily paused during maintenance. Please try again shortly.'
-          });
-        }
-
-        const userData = req.body || {};
-        console.log('[Auth API /api/auth/register] Processing registration for:', userData.email, 'Role:', userData.role);
-
-        const role = userData.role;
-        if (role !== 'job_seeker' && role !== 'employer') {
-          return res.status(400).json({ error: 'Please select a valid account type: "I am a Job Seeker" or "I am an Employer".' });
-        }
-
-        if (role === 'job_seeker' && !settings.registration.allowJobSeekerRegistration) {
-          return res.status(403).json({ error: 'Job Seeker registration is currently disabled by site administration.' });
-        }
-        if (role === 'employer' && !settings.registration.allowEmployerRegistration) {
-          return res.status(403).json({ error: 'Employer registration is currently disabled by site administration.' });
-        }
-
-        // 1. Mandatory Full Name
-        const name = (userData.name || '').trim();
-        if (!name || name.length < 2) {
-          return res.status(400).json({ error: 'Full Name is required (minimum 2 characters).' });
-        }
-
-        // 2. Mandatory Email Address
-        const cleanEmail = (userData.email || '').trim().toLowerCase();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-          return res.status(400).json({ error: 'A valid email address is required.' });
-        }
-
-        // 3. Mandatory GCC Country (Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, Oman)
-        const rawCountry = (userData.country || '').trim().toLowerCase();
-        const countryMap: Record<string, string> = {
-          'saudi arabia': 'saudi-arabia',
-          'saudi-arabia': 'saudi-arabia',
-          'united arab emirates': 'uae',
-          'united-arab-emirates': 'uae',
-          'uae': 'uae',
-          'qatar': 'qatar',
-          'kuwait': 'kuwait',
-          'bahrain': 'bahrain',
-          'oman': 'oman'
-        };
-        const countryKey = countryMap[rawCountry] || rawCountry;
-        const validCountries = ['saudi-arabia', 'uae', 'qatar', 'kuwait', 'bahrain', 'oman'];
-        if (!countryKey || !validCountries.includes(countryKey)) {
-          return res.status(400).json({
-            error: 'Please select a valid GCC country: Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain, or Oman.'
-          });
-        }
-
-        // 4. Mandatory Phone Number
-        const phone = (userData.phone || '').trim();
-        const digits = phone.replace(/\D/g, '');
-        if (!phone || digits.length < 7) {
-          return res.status(400).json({ error: 'A valid phone number with country code is required.' });
-        }
-
-        // 5. Mandatory Role-Specific Fields
-        let professionalTitle = '';
-        let companyName = '';
-        let hiringOrgName = '';
-
-        if (role === 'job_seeker') {
-          professionalTitle = (userData.professionalTitle || userData.headline || '').trim();
-          if (!professionalTitle || professionalTitle.length < 2) {
-            return res.status(400).json({ error: 'Professional Title / Trade is mandatory for Job Seekers.' });
-          }
-        } else if (role === 'employer') {
-          companyName = (userData.companyName || '').trim();
-          hiringOrgName = (userData.hiringOrgName || userData.organizationName || '').trim();
-
-          if (!companyName || companyName.length < 2) {
-            return res.status(400).json({ error: 'Company Name is mandatory for Employers.' });
-          }
-          if (!hiringOrgName || hiringOrgName.length < 2) {
-            return res.status(400).json({ error: 'Hiring Organization Name is mandatory for Employers.' });
-          }
-        }
-
-        // 6. Mandatory Password Requirements
-        const password = userData.password || '';
-        const confirmPassword = userData.confirmPassword;
-
-        if (!password || password.length < 8) {
-          return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
-        }
-        if (!/[A-Z]/.test(password)) {
-          return res.status(400).json({ error: 'Password must contain at least one uppercase letter (A-Z).' });
-        }
-        if (!/\d/.test(password)) {
-          return res.status(400).json({ error: 'Password must contain at least one number (0-9).' });
-        }
-        if (confirmPassword !== undefined && confirmPassword !== password) {
-          return res.status(400).json({ error: 'Confirm Password does not match Password.' });
-        }
-
-        // 7. Compulsory 5-digit Access Key (Account Recovery PIN)
-        const rawAccessKey = (userData.accessKey || '').toString().trim();
-        if (!rawAccessKey || !/^\d{5}$/.test(rawAccessKey)) {
-          return res.status(400).json({
-            error: 'A 5-digit numeric Access Key is compulsory (numbers only, exactly 5 digits).'
-          });
-        }
-
-        // 8. Backend Duplicate Account Protection (Email & Phone uniqueness)
-        const users = await getUsers();
-
-        if (users.some(u => u.email.toLowerCase() === cleanEmail)) {
-          return res.status(400).json({
-            error: 'An account with this email address already exists. Please sign in instead.'
-          });
-        }
-
-        const existingPhoneUser = users.find(u =>
-          phonesMatch(u.phone, phone) ||
-          phonesMatch(u.whatsapp, phone)
-        );
-        if (existingPhoneUser) {
-          return res.status(400).json({
-            error: 'An account with this phone number already exists. Please sign in instead.'
-          });
-        }
-
-        const emailDomain = cleanEmail.split('@')[1] || '';
-        if (settings.registration.blockedDomains.some(d => d.toLowerCase() === emailDomain)) {
-          return res.status(400).json({ error: 'Disposable or blocked email domains cannot be used on Gulfaro.' });
-        }
-
-        // 9. Create and persist user record with PBKDF2 password hash & bcrypt Access Key hash
-        const accessKeyHash = await hashAccessKey(rawAccessKey);
-
-        const nowIso = new Date().toISOString();
-
-        const newUser: UserRecord = {
-          id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          name,
-          email: cleanEmail,
-          role,
-          phone: cleanPhone(phone),
-          whatsapp: cleanPhone(userData.whatsapp || phone),
-          country: countryKey,
-          city: (userData.city || 'Riyadh').trim(),
-          professionalTitle: role === 'job_seeker' ? professionalTitle : undefined,
-          headline: role === 'job_seeker' ? professionalTitle : `Recruiter at ${companyName}`,
-          companyName: role === 'employer' ? companyName : undefined,
-          hiringOrgName: role === 'employer' ? hiringOrgName : undefined,
-          passwordHash: hashPassword(password),
-          accessKeyHash: accessKeyHash,
-          failedAttempts: 0,
-          lockoutUntil: null,
-          status: 'active',
-          createdAt: nowIso,
-          emailVerified: true,
-          emailVerifiedAt: nowIso
-        };
-
-        try {
-          await createUserTransactional(newUser);
-        } catch (dbErr: any) {
-          if (dbErr?.code === '23505' || dbErr?.cause?.code === '23505') {
-            return res.status(400).json({
-              error: 'An account with this email address or phone number already exists. Please sign in instead.'
-            });
-          }
-          throw dbErr;
-        }
-
-        await appendAuthHistoryEntry({
-          actorType: role === 'employer' ? 'employer' : 'user',
-          actorId: newUser.id,
-          emailOrUsername: newUser.email,
-          event: 'register',
-          success: true,
-          ip,
-          userAgent,
-          suspicious: false
-        });
-
-        // Optional non-blocking welcome email
-        if (settings.emailConfig.welcomeEmailEnabled && process.env.RESEND_API_KEY?.startsWith('re_')) {
-          sendPlatformEmail({
-            to: newUser.email,
-            subject: settings.emailConfig.welcomeSubject || 'Welcome to Gulfaro',
-            category: 'welcome',
-            html: `<p>Hello ${escapeHtml(newUser.name)},</p><p>${escapeHtml(settings.emailConfig.welcomeBody)}</p>`,
-            triggeredBy: 'auto-registration'
-          }).catch(() => {});
-        }
-
-        console.log('[Auth API /api/auth/register] User registered successfully (automatic activation):', newUser.id, newUser.email, newUser.role);
-
-        const token = issueUserSessionToken(newUser, true);
-        setUserSessionCookie(req, res, token, true);
-
-        res.status(201).json({ success: true, user: sanitizeUser(newUser), token });
-      } catch (err: any) {
-        console.error('[Auth API /api/auth/register] Error:', err);
-        await appendSystemErrorEntry({ level: 'error', source: '/api/auth/register', message: err?.message || 'Register error' });
-        res.status(500).json({ error: 'Registration failed due to a server error. Please try again.' });
-      }
-    }).catch(err => {
-      console.error('[Auth API Queue] Unexpected error:', err);
-      res.status(500).json({ error: 'Registration processing failed.' });
+  // Public registration paused during Release A verification security upgrade bridge
+  app.post('/api/auth/register', async (_req: Request, res: Response) => {
+    return res.status(503).json({
+      error: 'New registrations are temporarily paused while email verification security upgrades are being completed. Please check back shortly.',
+      code: 'REGISTRATION_TEMPORARILY_PAUSED'
     });
   });
 
@@ -1023,15 +790,17 @@ async function startServer() {
 
   async function enrichJobsVerifiedStatus(jobs: any[]): Promise<any[]> {
     const users = await getUsers();
-    const verifiedOwnerIds = new Set(
-      users
-        .filter(u => u.role === 'employer' || u.role === 'admin')
-        .map(u => u.id)
-    );
-    return jobs.map(j => ({
-      ...j,
-      isEmployerVerified: Boolean(j.isEmployerVerified) || (Boolean(j.userId) && verifiedOwnerIds.has(j.userId))
-    }));
+    const userById = new Map(users.map(u => [u.id, u]));
+    return jobs.map(j => {
+      const owner = j.userId ? userById.get(j.userId) : undefined;
+      const isVerified = owner
+        ? (owner.role === 'employer' || owner.role === 'admin') && owner.emailVerified === true
+        : Boolean(j.isEmployerVerified);
+      return {
+        ...j,
+        isEmployerVerified: isVerified
+      };
+    });
   }
 
   const CITY_SEARCH_ALIASES: Record<string, string[]> = {

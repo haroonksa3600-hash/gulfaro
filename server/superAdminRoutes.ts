@@ -799,7 +799,7 @@ export function createSuperAdminRouter(): express.Router {
 
   router.post('/users', requirePermission('users'), async (req: AuthenticatedAdminRequest, res: Response) => {
     try {
-      const { name, email, password, role, phone, country, city, companyName, hiringOrgName, professionalTitle, emailVerified } = req.body || {};
+      const { name, email, password, role, phone, country, city, companyName, hiringOrgName, professionalTitle } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
       if (!name || !cleanEmail || !password || password.length < 8) {
         return res.status(400).json({ error: 'Name, valid email, and password (min 8 chars) are required.' });
@@ -811,7 +811,6 @@ export function createSuperAdminRouter(): express.Router {
 
       const validRole = role === 'employer' ? 'employer' : 'job_seeker';
       const nowIso = new Date().toISOString();
-      const autoVerified = true;
       const newUser: any = {
         id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: name.trim(),
@@ -827,8 +826,8 @@ export function createSuperAdminRouter(): express.Router {
         headline: validRole === 'job_seeker' ? (professionalTitle || 'GCC Candidate') : `Recruiter at ${companyName || name}`,
         passwordHash: hashPassword(password),
         status: 'active',
-        emailVerified: autoVerified,
-        emailVerifiedAt: nowIso,
+        emailVerified: false,
+        emailVerifiedAt: undefined,
         createdAt: nowIso
       };
 
@@ -840,7 +839,7 @@ export function createSuperAdminRouter(): express.Router {
         action: 'CREATE_USER',
         targetType: validRole,
         targetId: newUser.id,
-        details: `Created ${validRole} account for ${cleanEmail}`,
+        details: `Created ${validRole} account for ${cleanEmail} (unverified)`,
         ip: getClientIp(req)
       });
 

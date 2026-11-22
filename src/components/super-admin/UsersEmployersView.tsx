@@ -50,8 +50,7 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
     country: 'saudi-arabia',
     city: 'Riyadh',
     companyName: '',
-    professionalTitle: '',
-    emailVerified: true
+    professionalTitle: ''
   });
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
@@ -164,8 +163,7 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
         country: 'saudi-arabia',
         city: 'Riyadh',
         companyName: '',
-        professionalTitle: '',
-        emailVerified: true
+        professionalTitle: ''
       });
       await loadUsers();
     } catch (err: any) {
@@ -735,14 +733,6 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
                   />
                 </div>
               </div>
-              <label className="flex items-center gap-2 pt-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={createForm.emailVerified}
-                  onChange={e => setCreateForm({ ...createForm, emailVerified: e.target.checked })}
-                />
-                <span className="font-semibold text-slate-700">Mark account email as Verified immediately</span>
-              </label>
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-slate-300 rounded-lg font-semibold">
                   Cancel
