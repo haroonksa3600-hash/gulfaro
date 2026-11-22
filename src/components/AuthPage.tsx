@@ -545,7 +545,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       autoComplete="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="admingulfaro@gmail.com"
+                      placeholder="Enter your email address"
                       className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
                     />
                   </div>
@@ -754,7 +754,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                           required
                           value={regEmail}
                           onChange={(e) => setRegEmail(e.target.value)}
-                          placeholder="admingulfaro@gmail.com"
+                          placeholder="Enter your email address"
                           className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-500 text-xs"
                         />
                       </div>
@@ -851,7 +851,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                           required
                           value={regEmail}
                           onChange={(e) => setRegEmail(e.target.value)}
-                          placeholder="admingulfaro@gmail.com"
+                          placeholder="Enter your email address"
                           className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-500 text-xs"
                         />
                       </div>

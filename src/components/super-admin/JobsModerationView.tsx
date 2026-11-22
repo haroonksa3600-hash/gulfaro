@@ -54,7 +54,7 @@ export const JobsModerationView: React.FC<JobsModerationViewProps> = ({ onToast 
     employmentType: 'full-time',
     experienceLevel: '3-5-years',
     iqamaRequirement: 'transferable',
-    contactEmail: 'admingulfaro@gmail.com',
+    contactEmail: '',
     contactPhone: '+966 50 000 0000',
     contactWhatsapp: '+966 50 000 0000',
     companyType: 'direct-company',

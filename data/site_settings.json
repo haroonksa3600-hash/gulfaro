@@ -25,8 +25,8 @@
   },
   "emailConfig": {
     "senderName": "Gulfaro Official",
-    "senderEmail": "admingulfaro@gmail.com",
-    "replyToEmail": "admingulfaro@gmail.com",
+    "senderEmail": "info@gulfaro.net",
+    "replyToEmail": "info@gulfaro.net",
     "verificationSubject": "Verify Your Employer Corporate Email - Gulfaro",
     "verificationHeading": "Official Employer Verification Gateway",
     "verificationBody": "Please confirm ownership of your corporate email address using the 6-digit code or instant verification link below.",
@@ -53,10 +53,10 @@
     },
     "promoBanners": [],
     "footerDescription": "Gulfaro is a modern GCC employment portal connecting skilled expatriate and national talent with direct employers across the Arabian Gulf.",
-    "footerContactEmail": "admingulfaro@gmail.com",
+    "footerContactEmail": "",
     "footerCopyright": "© 2026 GULFARO. All rights reserved. GCC Employment Portal.",
     "aboutUsContent": "Gulfaro connects skilled professionals with employers across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman. Employers can publish vacancies directly, and candidates reach hiring teams via official contact email or telephone.",
-    "contactUsEmail": "admingulfaro@gmail.com",
+    "contactUsEmail": "info@gulfaro.net",
     "contactUsPhone": "",
     "contactUsAddress": "",
     "faqs": [

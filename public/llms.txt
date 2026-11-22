@@ -2,7 +2,7 @@
 
 > Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across Saudi Arabia, the United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman, alongside original GCC career advice and direct employer email and telephone contact.
 
-Gulfaro provides free public access to direct-employer vacancies across all 6 GCC nations and 30 employment categories, with no application fees or third-party redirects. Official support contact: admingulfaro@gmail.com.
+Gulfaro provides free public access to direct-employer vacancies across all 6 GCC nations and 30 employment categories, with no application fees or third-party redirects. Official support page: https://www.gulfaro.net/contact.
 
 ## Main Pages
 - [Gulfaro Homepage](https://www.gulfaro.net/): Browse active GCC job vacancies and search by keyword, country, city, or category
@@ -76,7 +76,7 @@ Gulfaro provides free public access to direct-employer vacancies across all 6 GC
 
 ## Company, Legal & Contact
 - [About Us](https://www.gulfaro.net/about): Gulfaro mission, direct hiring standards, and Frequently Asked Questions
-- [Contact Us](https://www.gulfaro.net/contact): Official support desk (admingulfaro@gmail.com) and inquiry form
+- [Contact Us](https://www.gulfaro.net/contact): Official support desk and inquiry form
 - [Terms & Conditions](https://www.gulfaro.net/terms): Platform rules and strict ban on candidate recruitment fees
 - [Privacy Policy](https://www.gulfaro.net/privacy-policy): Data protection, regional GCC compliance, and cookie disclosures
 - [Disclaimer](https://www.gulfaro.net/disclaimer): Independent employment portal and verification notices

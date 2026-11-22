@@ -35,7 +35,11 @@ export const PublicInfoPages: React.FC<PublicInfoPagesProps> = ({
   publicConfig,
   onNavigate
 }) => {
-  const officialEmail = publicConfig?.cms?.contactUsEmail || publicConfig?.cms?.footerContactEmail || 'admingulfaro@gmail.com';
+  const rawContactEmail = String(publicConfig?.cms?.contactUsEmail || '').trim();
+  const officialEmail =
+    rawContactEmail && !rawContactEmail.toLowerCase().endsWith('@gmail.com')
+      ? rawContactEmail
+      : 'info@gulfaro.net';
   const configuredFaqs = (publicConfig?.cms?.faqs ?? VERIFIED_DEFAULT_FAQS)
     .map(faq => ({
       question: String(faq?.question || '').trim(),
@@ -409,9 +413,13 @@ export const PublicInfoPages: React.FC<PublicInfoPagesProps> = ({
               <section className="space-y-2">
                 <h2 className="text-lg font-bold text-slate-900">5. Data Protection & Your Rights</h2>
                 <p>
-                  Passwords and recovery keys are stored using cryptographic hashing. We strive to align data protection practices with applicable regional frameworks including the Saudi Personal Data Protection Law (PDPL) and UAE Federal Decree-Law No. 45/2021. To request correction or removal of your account data, email{' '}
-                  <a href={`mailto:${officialEmail}`} className="text-teal-700 font-semibold hover:underline">
-                    {officialEmail}
+                  Passwords and recovery keys are stored using cryptographic hashing. We strive to align data protection practices with applicable regional frameworks including the Saudi Personal Data Protection Law (PDPL) and UAE Federal Decree-Law No. 45/2021. To request correction or removal of your account data, please submit an inquiry on our{' '}
+                  <a
+                    href="/contact"
+                    onClick={e => handleSpaNav(e, '/contact')}
+                    className="text-teal-700 font-semibold hover:underline"
+                  >
+                    Contact Us page
                   </a>.
                 </p>
               </section>

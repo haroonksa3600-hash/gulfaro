@@ -22,7 +22,6 @@ export interface FaqEntry {
 }
 
 const PROD_ORIGIN = 'https://www.gulfaro.net';
-export const OFFICIAL_CONTACT_EMAIL = 'admingulfaro@gmail.com';
 
 export const VERIFIED_DEFAULT_FAQS: FaqEntry[] = [
   {
@@ -127,11 +126,9 @@ export function applyRouteSeo(meta: RouteSeoMetadata) {
 }
 
 export function buildOrganizationNode(options?: {
-  email?: string;
   description?: string;
 }): Record<string, any> {
   const origin = getPublicOrigin();
-  const contactEmail = (options?.email || OFFICIAL_CONTACT_EMAIL).trim() || OFFICIAL_CONTACT_EMAIL;
   const orgDescription =
     options?.description?.trim() ||
     'Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.';
@@ -150,11 +147,9 @@ export function buildOrganizationNode(options?: {
       width: 512,
       height: 512
     },
-    email: contactEmail,
     contactPoint: {
       '@type': 'ContactPoint',
       contactType: 'customer support',
-      email: contactEmail,
       url: `${origin}/contact`,
       areaServed: ['SA', 'AE', 'QA', 'KW', 'BH', 'OM'],
       availableLanguage: ['English']
@@ -343,7 +338,7 @@ export function buildArticleNode(article: CareerArticle): Record<string, any> {
 
 export function buildSeoGraph(
   extraNodes: Array<Record<string, any> | null | undefined> = [],
-  orgOptions?: { email?: string; description?: string }
+  orgOptions?: { description?: string }
 ): Record<string, any> {
   return {
     '@context': 'https://schema.org',

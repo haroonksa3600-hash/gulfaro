@@ -90,9 +90,6 @@ export function buildLlmsTxt(options: {
   settings?: any;
 }): string {
   const origin = options.origin.replace(/\/+$/, '') || 'https://www.gulfaro.net';
-  const contactEmail =
-    sanitizeLine(options.settings?.cms?.contactUsEmail || options.settings?.cms?.footerContactEmail) ||
-    'admingulfaro@gmail.com';
   const activeJobs = getActivePublicJobs(options.jobs, options.settings);
 
   const lines: string[] = [
@@ -100,7 +97,7 @@ export function buildLlmsTxt(options: {
     '',
     '> Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across Saudi Arabia, the United Arab Emirates, Qatar, Kuwait, Bahrain, and Oman, alongside original GCC career advice and direct employer email and telephone contact.',
     '',
-    `Gulfaro provides free public access to direct-employer vacancies across all 6 GCC nations and 30 employment categories, with no application fees or third-party redirects. Official support contact: ${contactEmail}.`,
+    `Gulfaro provides free public access to direct-employer vacancies across all 6 GCC nations and 30 employment categories, with no application fees or third-party redirects. Official support page: ${origin}/contact.`,
     '',
     '## Main Pages',
     `- [Gulfaro Homepage](${origin}/): Browse active GCC job vacancies and search by keyword, country, city, or category`,
@@ -153,7 +150,7 @@ export function buildLlmsTxt(options: {
     '',
     '## Company, Legal & Contact',
     `- [About Us](${origin}/about): Gulfaro mission, direct hiring standards, and Frequently Asked Questions`,
-    `- [Contact Us](${origin}/contact): Official support desk (${contactEmail}) and inquiry form`,
+    `- [Contact Us](${origin}/contact): Official support desk and inquiry form`,
     `- [Terms & Conditions](${origin}/terms): Platform rules and strict ban on candidate recruitment fees`,
     `- [Privacy Policy](${origin}/privacy-policy): Data protection, regional GCC compliance, and cookie disclosures`,
     `- [Disclaimer](${origin}/disclaimer): Independent employment portal and verification notices`,
@@ -173,9 +170,6 @@ export function buildHomepageMarkdown(options: {
   settings?: any;
 }): string {
   const origin = options.origin.replace(/\/+$/, '') || 'https://www.gulfaro.net';
-  const contactEmail =
-    sanitizeLine(options.settings?.cms?.contactUsEmail || options.settings?.cms?.footerContactEmail) ||
-    'admingulfaro@gmail.com';
   const heroTitle =
     sanitizeLine(options.settings?.cms?.heroTitle) ||
     'Direct Job Opportunities Across Saudi Arabia, UAE & The Gulf';
@@ -192,7 +186,7 @@ export function buildHomepageMarkdown(options: {
     `- **Canonical URL**: [${origin}/](${origin}/)`,
     `- **LLM Discovery**: [${origin}/llms.txt](${origin}/llms.txt)`,
     `- **Active Vacancies**: ${activeJobs.length}`,
-    `- **Contact Email**: [${contactEmail}](mailto:${contactEmail})`,
+    `- **Official Support**: [Contact Us](${origin}/contact)`,
     '- **Candidate Standards**: Zero application fees · Direct employer email & phone/WhatsApp access · No external redirect links',
     '',
     '## Latest Job Opportunities Across the GCC'
@@ -245,7 +239,7 @@ export function buildHomepageMarkdown(options: {
     '',
     '## Company, Legal & Support',
     `- [About Us](${origin}/about)`,
-    `- [Contact Us](${origin}/contact) ([${contactEmail}](mailto:${contactEmail}))`,
+    `- [Contact Us](${origin}/contact) — Official support desk and inquiry form`,
     `- [Terms & Conditions](${origin}/terms)`,
     `- [Privacy Policy](${origin}/privacy-policy)`,
     `- [Disclaimer](${origin}/disclaimer)`,

@@ -275,7 +275,6 @@ export default function App() {
   useEffect(() => {
     const cleanPath = currentPath.split('?')[0].replace(/\/+$/, '') || '/';
     const orgOptions = {
-      email: publicConfig?.cms?.contactUsEmail || publicConfig?.cms?.footerContactEmail,
       description: publicConfig?.cms?.footerDescription
     };
 
@@ -568,7 +567,7 @@ export default function App() {
       },
       '/contact': {
         title: 'Contact Us — Gulfaro Support & Trust Desk',
-        description: 'Reach Gulfaro administration by official email admingulfaro@gmail.com or submit an inquiry regarding job listings, employer verification, or privacy requests.',
+        description: 'Reach Gulfaro administration through our Contact Us page or submit an inquiry regarding job listings, employer verification, or privacy requests.',
         breadcrumbName: 'Contact Us'
       },
       '/privacy-policy': {
@@ -957,9 +956,6 @@ export default function App() {
           </h1>
           <p className="text-sm text-slate-300 leading-relaxed">
             {noticeMsg || 'Scheduled platform maintenance is underway. Please check back shortly.'}
-          </p>
-          <p className="text-xs text-slate-400 pt-2">
-            Email: {publicConfig.cms?.contactUsEmail || 'admingulfaro@gmail.com'}
           </p>
         </div>
       </div>

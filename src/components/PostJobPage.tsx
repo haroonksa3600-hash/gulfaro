@@ -947,7 +947,7 @@ export const PostJobPage: React.FC<PostJobPageProps> = ({
                       setContactEmail(e.target.value);
                       clearFieldError('contactEmail');
                     }}
-                    placeholder="admingulfaro@gmail.com"
+                    placeholder="Enter employer contact email"
                     className={getInputClass('contactEmail')}
                   />
                   {renderFieldError('contactEmail')}

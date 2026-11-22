@@ -4,7 +4,7 @@
 
 - **Canonical URL**: [https://www.gulfaro.net/](https://www.gulfaro.net/)
 - **LLM Discovery**: [https://www.gulfaro.net/llms.txt](https://www.gulfaro.net/llms.txt)
-- **Contact Email**: [admingulfaro@gmail.com](mailto:admingulfaro@gmail.com)
+- **Official Support**: [Contact Us](https://www.gulfaro.net/contact)
 - **Candidate Standards**: Zero application fees · Direct employer email & phone/WhatsApp access · No external redirect links
 
 ## Latest Job Opportunities Across the GCC
@@ -77,7 +77,7 @@
 
 ## Company, Legal & Support
 - [About Us](https://www.gulfaro.net/about)
-- [Contact Us](https://www.gulfaro.net/contact) ([admingulfaro@gmail.com](mailto:admingulfaro@gmail.com))
+- [Contact Us](https://www.gulfaro.net/contact) — Official support desk and inquiry form
 - [Terms & Conditions](https://www.gulfaro.net/terms)
 - [Privacy Policy](https://www.gulfaro.net/privacy-policy)
 - [Disclaimer](https://www.gulfaro.net/disclaimer)

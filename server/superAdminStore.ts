@@ -414,10 +414,10 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     },
     promoBanners: [],
     footerDescription: 'Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.',
-    footerContactEmail: 'admingulfaro@gmail.com',
+    footerContactEmail: '',
     footerCopyright: '© 2026 GULFARO. All rights reserved. GCC Job Classifieds Marketplace.',
     aboutUsContent: 'Gulfaro connects skilled expatriate and national professionals with verified direct employers and licensed recruiters across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman. Employers can publish vacancies instantly, and candidates connect directly via WhatsApp, phone, or in-app profile submission.',
-    contactUsEmail: 'admingulfaro@gmail.com',
+    contactUsEmail: 'info@gulfaro.net',
     contactUsPhone: '+966 50 000 0000',
     contactUsAddress: 'Riyadh, Kingdom of Saudi Arabia · Serving all 6 GCC Nations',
     faqs: [
@@ -658,7 +658,7 @@ export function ensureOwnerAdminSeeded(): AdminAccount[] {
     const ownerAccount: AdminAccount = {
       id: 'sa-owner-1',
       username: 'Haroon555',
-      email: 'admingulfaro@gmail.com',
+      email: 'info@gulfaro.net',
       fullName: 'Muhammad Haroon (Founder & Owner)',
       passwordHash,
       role: 'owner',

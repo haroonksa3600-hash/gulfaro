@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GccCountry, User } from '../types/job';
 import { GCC_COUNTRY_DIRECTORY, PUBLIC_JOB_CATEGORIES } from '../data/gccDirectory';
 import { CAREER_ARTICLES } from '../data/careerArticles';
-import { Mail, ChevronDown, ArrowRight, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface FooterProps {
   onSelectCountry: (c: GccCountry | 'all') => void;
@@ -40,7 +40,6 @@ export const Footer: React.FC<FooterProps> = ({
     legal: false
   });
 
-  const contactEmail = cmsOverrides?.footerContactEmail || 'admingulfaro@gmail.com';
   const descriptionText = cmsOverrides?.footerDescription || DEFAULT_FOOTER_DESCRIPTION;
   const copyrightText = cmsOverrides?.footerCopyright || DEFAULT_FOOTER_COPYRIGHT;
 
@@ -222,17 +221,6 @@ export const Footer: React.FC<FooterProps> = ({
       <p className="text-[13px] text-slate-300/90 leading-relaxed max-w-md">
         {descriptionText}
       </p>
-
-      <div className="pt-1">
-        <a
-          href={`mailto:${contactEmail}`}
-          aria-label={`Email Gulfaro support at ${contactEmail}`}
-          className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-teal-500/60 text-slate-200 hover:text-teal-300 transition-colors text-xs sm:text-[13px] font-medium"
-        >
-          <Mail className="w-4 h-4 text-teal-400 shrink-0" />
-          <span className="break-all">{contactEmail}</span>
-        </a>
-      </div>
     </div>
   );
 

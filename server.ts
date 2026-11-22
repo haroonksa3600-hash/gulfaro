@@ -643,7 +643,7 @@ async function startServer() {
           suspicious: true
         });
         return res.status(403).json({
-          error: `Your account is currently ${user.status}.${user.suspensionReason ? ` Reason: ${user.suspensionReason}` : ' Contact admingulfaro@gmail.com for assistance.'}`
+          error: `Your account is currently ${user.status}.${user.suspensionReason ? ` Reason: ${user.suspensionReason}` : ' Please submit an inquiry via the Gulfaro Contact Us page for assistance.'}`
         });
       }
 
@@ -1496,9 +1496,6 @@ async function startServer() {
     origin: string,
     settings?: { cms?: { footerContactEmail?: string; contactUsEmail?: string; footerDescription?: string } }
   ) {
-    const contactEmail =
-      String(settings?.cms?.contactUsEmail || settings?.cms?.footerContactEmail || 'admingulfaro@gmail.com').trim() ||
-      'admingulfaro@gmail.com';
     const orgDescription =
       String(settings?.cms?.footerDescription || '').trim() ||
       'Gulfaro is a modern GCC job marketplace connecting skilled expatriate and national talent with verified employers across the Arabian Gulf, making recruitment simpler, faster, and more reliable.';
@@ -1516,11 +1513,9 @@ async function startServer() {
         width: 512,
         height: 512
       },
-      email: contactEmail,
       contactPoint: {
         '@type': 'ContactPoint',
         contactType: 'customer support',
-        email: contactEmail,
         url: `${origin}/contact`,
         areaServed: ['SA', 'AE', 'QA', 'KW', 'BH', 'OM'],
         availableLanguage: ['English']
@@ -2563,7 +2558,7 @@ ${xmlItems}
       } else if (pathname === '/contact') {
         const contactTitle = 'Contact Us — Gulfaro Support & Trust Desk';
         const contactDescription =
-          'Reach Gulfaro administration by official email admingulfaro@gmail.com or submit an inquiry regarding job listings, employer verification, or privacy requests.';
+          'Reach Gulfaro administration through our Contact Us page or submit an inquiry regarding job listings, employer verification, or privacy requests.';
         template = applyServerSeoTags(template, {
           title: contactTitle,
           description: contactDescription,

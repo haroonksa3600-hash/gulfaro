@@ -182,7 +182,7 @@ const INITIAL_JSON_USERS: RepoUserRecord[] = [
   {
     id: 'user-admin-1',
     name: 'Gul Faro Official Admin',
-    email: 'admingulfaro@gmail.com',
+    email: 'info@gulfaro.net',
     password: 'password123',
     role: 'admin',
     country: 'saudi-arabia',
@@ -1257,7 +1257,7 @@ export async function getAdmins(): Promise<AdminAccount[]> {
     const owner: AdminAccount = {
       id: 'sa-owner-1',
       username: 'Haroon555',
-      email: 'admingulfaro@gmail.com',
+      email: 'info@gulfaro.net',
       fullName: 'Muhammad Haroon (Founder & Owner)',
       passwordHash,
       role: 'owner',
