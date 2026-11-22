@@ -22,7 +22,7 @@ class EmailService {
   public async sendPasswordResetEmail(rawEmail: string): Promise<SendResetResult> {
     const email = rawEmail.trim().toLowerCase();
 
-    if (!email || !email.includes('@')) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return {
         success: false,
         error: 'Please enter a valid email address.'
@@ -36,7 +36,7 @@ class EmailService {
         body: JSON.stringify({ email })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
         return {
@@ -47,7 +47,9 @@ class EmailService {
 
       return {
         success: true,
-        message: data.message || 'If an account with that email exists, we have sent a secure password reset link to it. Please check your inbox and spam folder.'
+        message:
+          data.message ||
+          'If an account exists with this email address, you will receive a password reset link shortly.'
       };
     } catch (err: any) {
       console.error('Password reset request error:', err);
@@ -59,26 +61,26 @@ class EmailService {
   }
 
   /**
-   * Validate token and email securely against the backend server
+   * Validate reset token securely against the backend server
    */
-  public async validateResetToken(token: string | null, rawEmail: string | null): Promise<ValidationResult> {
-    if (!token || !rawEmail) {
+  public async validateResetToken(token: string | null, rawEmail?: string | null): Promise<ValidationResult> {
+    if (!token || !token.trim()) {
       return {
         valid: false,
-        error: 'Invalid or missing reset link. Please request a new one.'
+        error: 'Invalid or missing password reset link. Please request a new one.'
       };
     }
 
-    const email = rawEmail.trim().toLowerCase();
+    const email = rawEmail ? rawEmail.trim().toLowerCase() : undefined;
 
     try {
       const response = await fetch(apiUrl('/api/auth/verify-reset-token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, email })
+        body: JSON.stringify(email ? { token: token.trim(), email } : { token: token.trim() })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.valid) {
         return {
@@ -88,7 +90,7 @@ class EmailService {
       }
 
       return { valid: true };
-    } catch (err) {
+    } catch {
       return {
         valid: false,
         error: 'Failed to verify token with security server. Please check your connection.'
@@ -101,11 +103,11 @@ class EmailService {
    */
   public async resetPassword(
     token: string,
-    rawEmail: string,
+    rawEmail: string | undefined,
     newPassword: string,
     confirmPassword: string
-  ): Promise<{ success: boolean; error?: string }> {
-    const email = rawEmail.trim().toLowerCase();
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    const email = rawEmail ? rawEmail.trim().toLowerCase() : undefined;
 
     // 1. Client-side pre-validation
     if (!newPassword || newPassword.length < 8) {
@@ -115,10 +117,17 @@ class EmailService {
       };
     }
 
+    if (!/[A-Z]/.test(newPassword)) {
+      return {
+        success: false,
+        error: 'Password must contain at least one uppercase letter (A-Z).'
+      };
+    }
+
     if (!/\d/.test(newPassword)) {
       return {
         success: false,
-        error: 'Password must contain at least 1 number.'
+        error: 'Password must contain at least one number (0-9).'
       };
     }
 
@@ -135,13 +144,14 @@ class EmailService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token,
-          email,
-          password: newPassword
+          token: token.trim(),
+          ...(email ? { email } : {}),
+          password: newPassword,
+          confirmPassword
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
         return {
@@ -150,10 +160,16 @@ class EmailService {
         };
       }
 
-      // Also update local cache so the user can immediately log in on this device
-      storageService.updateUserPassword(email, newPassword);
+      if (email) {
+        storageService.updateUserPassword(email, newPassword);
+      }
 
-      return { success: true };
+      return {
+        success: true,
+        message:
+          data.message ||
+          'Your password has been successfully reset. You can now log in using your new password.'
+      };
     } catch (err: any) {
       console.error('Password reset submit error:', err);
       return {

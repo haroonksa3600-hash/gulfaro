@@ -191,10 +191,6 @@ export interface User {
   experienceYears?: string;
   emailVerified?: boolean;
   emailVerifiedAt?: string;
-  accessKey?: string; // 5-digit numeric PIN for account recovery
-  accessKeyHash?: string;
-  failedAttempts?: number;
-  lockoutUntil?: number | null;
   status?: 'active' | 'suspended' | 'banned' | 'deactivated' | 'pending_deletion';
   postingRestricted?: boolean;
   isFeaturedEmployer?: boolean;

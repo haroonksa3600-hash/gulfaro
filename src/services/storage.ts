@@ -201,8 +201,10 @@ class StorageService {
               const merged = { ...existing, ...u };
               map.set(key, {
                 ...merged,
-                emailVerified: true,
-                emailVerifiedAt: merged.emailVerifiedAt || merged.createdAt || new Date().toISOString()
+                emailVerified: Boolean(merged.emailVerified),
+                emailVerifiedAt: merged.emailVerified
+                  ? merged.emailVerifiedAt || merged.createdAt || new Date().toISOString()
+                  : undefined
               });
             }
           });
@@ -279,18 +281,22 @@ class StorageService {
       this.savedJobIds = new Set();
     }
 
-    // Load current user from session token or persistent storage
+    // Load current user from session token or persistent storage (never restore unverified accounts)
     try {
       const storedUser = localStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_USER);
       if (storedUser) {
         const parsedUser: User = JSON.parse(storedUser);
-        this.currentUser = parsedUser
-          ? {
-              ...parsedUser,
-              emailVerified: true,
-              emailVerifiedAt: parsedUser.emailVerifiedAt || parsedUser.createdAt || new Date().toISOString()
-            }
-          : null;
+        if (parsedUser && parsedUser.emailVerified === true) {
+          this.currentUser = {
+            ...parsedUser,
+            emailVerified: true,
+            emailVerifiedAt: parsedUser.emailVerifiedAt || parsedUser.createdAt || new Date().toISOString()
+          };
+        } else {
+          this.currentUser = null;
+          localStorage.removeItem(STORAGE_KEY_SESSION);
+          localStorage.removeItem(STORAGE_KEY_USER);
+        }
       } else {
         this.currentUser = null;
       }
@@ -947,11 +953,14 @@ class StorageService {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data?.user?.id) {
+        if (data?.user?.id && data.user.emailVerified === true) {
           this.setCurrentUser({
             ...(this.currentUser || {}),
-            ...data.user
+            ...data.user,
+            emailVerified: true
           });
+        } else {
+          this.logoutUser();
         }
       } else if (res.status === 401) {
         this.logoutUser();
@@ -962,7 +971,11 @@ class StorageService {
     return this.users;
   }
 
-  public async loginUserAsync(email: string, password?: string, rememberMe = true): Promise<{ success: boolean; user?: User; error?: string }> {
+  public async loginUserAsync(
+    email: string,
+    password?: string,
+    rememberMe = true
+  ): Promise<{ success: boolean; user?: User; error?: string; code?: string }> {
     const inputEmail = (email || '').toLowerCase().trim();
     const inputPassword = (password || '').trim();
 
@@ -990,12 +1003,19 @@ class StorageService {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success && data.user) {
+        if (data.user.emailVerified !== true) {
+          return {
+            success: false,
+            code: 'EMAIL_NOT_VERIFIED',
+            error: 'Please verify your email address before signing in.'
+          };
+        }
         if (data.token) {
           this.setAuthToken(data.token);
         }
         const authenticatedUser: User = {
           ...data.user,
-          emailVerified: data.user.emailVerified ?? true,
+          emailVerified: true,
           emailVerifiedAt: data.user.emailVerifiedAt || data.user.createdAt || new Date().toISOString()
         };
 
@@ -1020,6 +1040,7 @@ class StorageService {
 
       return {
         success: false,
+        code: data?.code,
         error: data?.error || 'Authentication failed. Please check your email and password.'
       };
     } catch {
@@ -1030,7 +1051,11 @@ class StorageService {
     }
   }
 
-  public loginUser(email: string, password?: string, rememberMe = true): { success: boolean; user?: User; error?: string } {
+  public loginUser(
+    email: string,
+    password?: string,
+    rememberMe = true
+  ): { success: boolean; user?: User; error?: string; code?: string } {
     const inputEmail = (email || '').toLowerCase().trim();
     const inputPassword = (password || '').trim();
 
@@ -1057,12 +1082,10 @@ class StorageService {
       usersList = [...this.users];
     }
 
-    // Fallback: merge DEMO_USERS if list is empty
     if (!usersList.length) {
       usersList = [...DEMO_USERS];
     }
 
-    // Case-insensitive search by normalized email
     const userMatch = usersList.find(u => {
       const emailMatch = u.email && u.email.toLowerCase().trim() === inputEmail;
       const adminMatch = (inputEmail === 'admin' || inputEmail === 'superadmin') && u.role === 'admin';
@@ -1076,12 +1099,18 @@ class StorageService {
       };
     }
 
-    // Verify password: check exact match or demo fallback passwords
-    const validPasswords = [userMatch.password, 'password123', 'admin123', 'admin', 'Haroon15607'].filter(Boolean);
-    if (!validPasswords.includes(inputPassword)) {
+    if (!userMatch.password || userMatch.password !== inputPassword) {
       return {
         success: false,
         error: 'Incorrect password. Please verify your password and try again, or click "Forgot password?".'
+      };
+    }
+
+    if (userMatch.emailVerified !== true) {
+      return {
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        error: 'Please verify your email address before signing in.'
       };
     }
 
@@ -1097,7 +1126,16 @@ class StorageService {
     return { success: true, user: userMatch };
   }
 
-  public async registerUserAsync(userData: Omit<User, 'id' | 'createdAt'>): Promise<{ success: boolean; user?: User; error?: string }> {
+  public async registerUserAsync(
+    userData: Omit<User, 'id' | 'createdAt'> & { confirmPassword?: string }
+  ): Promise<{
+    success: boolean;
+    requiresVerification?: boolean;
+    emailSent?: boolean;
+    message?: string;
+    user?: User;
+    error?: string;
+  }> {
     const emailNormalized = (userData.email || '').toLowerCase().trim();
     const phoneTrimmed = (userData.phone || '').trim();
 
@@ -1105,9 +1143,6 @@ class StorageService {
       return { success: false, error: 'A valid email address is required.' };
     }
 
-    console.log('[Gulfaro Auth] Registering user on Gulfaro server:', emailNormalized);
-
-    // 1. Register on backend server FIRST so canonical user ID & database persistence are guaranteed
     try {
       const { res, data, isJson } = await this.fetchJsonWithRetry('/api/auth/register', {
         method: 'POST',
@@ -1116,8 +1151,7 @@ class StorageService {
           ...userData,
           email: emailNormalized,
           phone: phoneTrimmed,
-          whatsapp: (userData.whatsapp || phoneTrimmed).trim(),
-          accessKey: userData.accessKey
+          whatsapp: (userData.whatsapp || phoneTrimmed).trim()
         })
       });
 
@@ -1128,27 +1162,39 @@ class StorageService {
         };
       }
 
-      if (data.user) {
-        if (data.token) {
-          this.setAuthToken(data.token);
-        }
-        const mergedUser: User = {
-          ...data.user,
-          emailVerified: data.user.emailVerified ?? true,
-          emailVerifiedAt: data.user.emailVerifiedAt || data.user.createdAt || new Date().toISOString()
-        };
+      const returnedUser: User | undefined = data.user
+        ? {
+            ...data.user,
+            emailVerified: Boolean(data.user.emailVerified),
+            emailVerifiedAt: data.user.emailVerified ? data.user.emailVerifiedAt : undefined
+          }
+        : undefined;
+
+      if (returnedUser) {
         const idx = this.users.findIndex(u => u.email.toLowerCase().trim() === emailNormalized);
         if (idx >= 0) {
-          this.users[idx] = mergedUser;
+          this.users[idx] = returnedUser;
         } else {
-          this.users.push(mergedUser);
+          this.users.push(returnedUser);
         }
         this.saveUsersToStorage();
-        this.setCurrentUser(mergedUser);
-        return { success: true, user: mergedUser };
       }
 
-      return { success: false, error: 'Unexpected registration response from server.' };
+      // Only log user in immediately if account is already verified and server issued a session token
+      if (!data.requiresVerification && data.token && returnedUser?.emailVerified === true) {
+        this.setAuthToken(data.token);
+        this.setCurrentUser(returnedUser);
+      }
+
+      return {
+        success: true,
+        requiresVerification: Boolean(data.requiresVerification ?? true),
+        emailSent: Boolean(data.emailSent),
+        message:
+          data.message ||
+          'Your registration was successful. Please check your email and click the verification link to activate your Gulfaro account.',
+        user: returnedUser
+      };
     } catch (networkErr) {
       console.warn('[Gulfaro Auth] Server registration request failed:', networkErr);
       return {
@@ -1158,13 +1204,18 @@ class StorageService {
     }
   }
 
-  public registerUser(userData: Omit<User, 'id' | 'createdAt'>): { success: boolean; user?: User; error?: string } {
+  public registerUser(userData: Omit<User, 'id' | 'createdAt'>): {
+    success: boolean;
+    requiresVerification?: boolean;
+    message?: string;
+    user?: User;
+    error?: string;
+  } {
     const emailNormalized = (userData.email || '').toLowerCase().trim();
     if (!emailNormalized) {
       return { success: false, error: 'A valid email address is required.' };
     }
 
-    // Read directly from localStorage 'gulfaro_users'
     let usersList: User[] = [];
     try {
       const raw = localStorage.getItem(STORAGE_KEY_GULFARO_USERS);
@@ -1176,12 +1227,10 @@ class StorageService {
       usersList = [...DEMO_USERS];
     }
 
-    // Check duplicate email (case-insensitive)
     if (usersList.some(u => u.email && u.email.toLowerCase().trim() === emailNormalized)) {
       return { success: false, error: 'An account with this email address already exists. Please sign in instead.' };
     }
 
-    // Check duplicate phone
     if (userData.phone || userData.whatsapp) {
       const match = usersList.find(u => phonesMatch(u.phone, userData.phone) || phonesMatch(u.whatsapp, userData.whatsapp));
       if (match) {
@@ -1194,29 +1243,31 @@ class StorageService {
       ...userData,
       id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       email: emailNormalized,
-      password: userData.password || 'password123',
+      password: userData.password,
       phone: (userData.phone || '').trim(),
       whatsapp: (userData.whatsapp || userData.phone || '').trim(),
-      emailVerified: true,
-      emailVerifiedAt: nowIso,
+      emailVerified: false,
+      emailVerifiedAt: undefined,
       createdAt: nowIso
     };
 
     usersList.push(newUser);
     this.users = usersList;
 
-    // Immediately persist to localStorage
     try {
       localStorage.setItem(STORAGE_KEY_GULFARO_USERS, JSON.stringify(usersList));
       localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(usersList));
-      localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(newUser));
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newUser));
     } catch (err) {
       console.error('[Gulfaro Storage] Error persisting to localStorage:', err);
     }
 
-    this.setCurrentUser(newUser);
-    return { success: true, user: newUser };
+    return {
+      success: true,
+      requiresVerification: true,
+      message:
+        'Your registration was successful. Please check your email and click the verification link to activate your Gulfaro account.',
+      user: newUser
+    };
   }
 
   public isPhoneRegistered(phone: string): boolean {
@@ -1391,82 +1442,88 @@ class StorageService {
 
   public isEmployerVerified(job: JobAd): boolean {
     if (job.isEmployerVerified === true) return true;
-    if (job.userId && this.currentUser?.role === 'employer' && this.currentUser.id === job.userId) {
-      return true;
+    if (job.userId && this.currentUser && this.currentUser.id === job.userId) {
+      return (this.currentUser.role === 'employer' || this.currentUser.role === 'admin') && this.currentUser.emailVerified === true;
     }
     if (job.userId) {
       const u = this.users.find(usr => usr.id === job.userId);
-      if (u && (u.role === 'employer' || u.role === 'admin' || u.emailVerified)) return true;
+      if (u && (u.role === 'employer' || u.role === 'admin') && u.emailVerified === true) return true;
     }
     return false;
   }
 
-  /**
-   * Verify 5-digit Access Key against the backend server.
-   * If correct, returns short-lived 10-minute JWT token for password reset.
-   * If incorrect, returns generic error without revealing existence to prevent enumeration.
-   */
-  public async verifyAccessKeyAsync(email: string, accessKey: string): Promise<{ success: boolean; token?: string; error?: string }> {
+  public async verifyEmailTokenAsync(
+    token: string
+  ): Promise<{ success: boolean; code?: string; message?: string; error?: string }> {
+    const cleanToken = (token || '').trim();
+    if (!cleanToken) {
+      return {
+        success: false,
+        code: 'INVALID_TOKEN',
+        error: 'Invalid or missing verification token. Please check the link or request a new verification email.'
+      };
+    }
     try {
-      const res = await fetch(apiUrl('/api/auth/verify-access-key'), {
+      const res = await fetch(apiUrl('/api/auth/verify-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          accessKey: accessKey.trim()
-        })
+        body: JSON.stringify({ token: cleanToken })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         return {
           success: false,
-          error: data.error || 'Invalid Email or Access Key.'
+          code: data?.code,
+          error: data?.error || 'This verification link is invalid or has expired.'
         };
       }
-      return { success: true, token: data.token };
-    } catch (err: any) {
+      return {
+        success: true,
+        message:
+          data?.message ||
+          'Your email address has been verified! Your Gulfaro account is now active and ready to sign in.'
+      };
+    } catch {
       return {
         success: false,
-        error: 'Unable to connect to authentication server. Please check your network and try again.'
+        error: 'Unable to reach the Gulfaro verification server. Please check your connection and try again.'
       };
     }
   }
 
-  /**
-   * Reset user password using the verified 10-minute JWT token.
-   */
-  public async resetPasswordWithAccessKeyAsync(
-    resetToken: string,
-    newPassword: string,
-    email?: string
-  ): Promise<{ success: boolean; error?: string }> {
+  public async resendVerificationEmailAsync(
+    email: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return {
+        success: false,
+        error: 'Please enter a valid email address.'
+      };
+    }
     try {
-      const res = await fetch(apiUrl('/api/auth/reset-password-access-key'), {
+      const res = await fetch(apiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          resetToken,
-          newPassword
-        })
+        body: JSON.stringify({ email: cleanEmail })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         return {
           success: false,
-          error: data.error || 'Failed to update password.'
+          error: data?.error || 'Unable to resend verification email. Please try again.'
         };
       }
-
-      // Also update password in local storage if email is provided
-      if (email) {
-        this.updateUserPassword(email, newPassword);
-      }
-
-      return { success: true };
-    } catch (err: any) {
+      return {
+        success: true,
+        message:
+          data?.message ||
+          'If an unverified Gulfaro account exists with that email address, a new verification link has been sent.'
+      };
+    } catch {
       return {
         success: false,
-        error: 'Unable to connect to authentication server. Please try again.'
+        error: 'Unable to connect to the Gulfaro email server. Please check your network and try again.'
       };
     }
   }

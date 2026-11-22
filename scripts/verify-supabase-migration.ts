@@ -42,7 +42,9 @@ async function verifyDatabaseSchemaAndRls() {
     'job_seeker_profiles',
     'jobs',
     'verification_codes',
+    'email_verification_tokens',
     'password_reset_tokens',
+    'auth_rate_limits',
     'admins',
     'admin_sessions',
     'admin_reset_tokens',
@@ -68,7 +70,21 @@ async function verifyDatabaseSchemaAndRls() {
       assert.strictEqual(byName.has(tbl), true, `Missing PostgreSQL table: public.${tbl}`);
       assert.strictEqual(byName.get(tbl), true, `RLS is NOT enabled on public.${tbl}`);
     }
-    console.log(`[DB Verify] All ${expectedTables.length} PostgreSQL tables exist with RLS enabled.`);
+
+    const legacyCols = await pool.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = ANY($1::text[])`,
+      [['access_key_hash', 'failed_attempts', 'lockout_until']]
+    );
+    assert.strictEqual(
+      legacyCols.rows.length,
+      0,
+      `Deprecated Access Key columns still exist on public.users: ${legacyCols.rows.map((r: any) => r.column_name).join(', ')}`
+    );
+    console.log(`[DB Verify] All ${expectedTables.length} PostgreSQL tables exist with RLS enabled and Access Key columns removed.`);
   } finally {
     await pool.end();
   }
@@ -106,13 +122,26 @@ async function main() {
   assert.strictEqual(legacyAppRes.status, 410, 'Online application endpoint must return 410 Gone');
   console.log('[Pass] POST /api/applications returns 410 Gone as required.');
 
-  // 4. Custom Authentication E2E (Register -> Duplicate Check -> Access Key PIN -> JWT Password Reset -> Login)
+  // 4. Custom Authentication E2E (Register unverified -> 403 Unverified Block -> Access Key Routes 404 -> Forgot Password -> Login)
   const testStamp = Date.now();
   const testEmail = `verify.emp.${testStamp}@gulfaro-test.example.com`;
   const testPhone = `+966 55 ${String(testStamp).slice(-7)}`;
   const initialPass = 'TestPass123';
-  const rotatedPass = 'RotatedPass456';
-  const accessKeyPin = '54321';
+
+  const legacyAkVerify = await apiJson('/api/auth/verify-access-key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: testEmail, accessKey: '12345' })
+  });
+  assert.strictEqual(legacyAkVerify.status, 404, 'Legacy /api/auth/verify-access-key must return 404');
+
+  const legacyAkReset = await apiJson('/api/auth/reset-password-access-key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resetToken: 'invalid', newPassword: 'TestPass123' })
+  });
+  assert.strictEqual(legacyAkReset.status, 404, 'Legacy /api/auth/reset-password-access-key must return 404');
+  console.log('[Pass] Legacy Access Key endpoints removed (404).');
 
   const regRes = await apiJson('/api/auth/register', {
     method: 'POST',
@@ -127,14 +156,16 @@ async function main() {
       companyName: 'VerifyTest Contracting Co.',
       hiringOrgName: 'VerifyTest Contracting Co.',
       password: initialPass,
-      confirmPassword: initialPass,
-      accessKey: accessKeyPin
+      confirmPassword: initialPass
     })
   });
   assert.strictEqual(regRes.status, 201, `Employer registration failed: ${JSON.stringify(regRes.body)}`);
-  assert.ok(!regRes.body.user.password && !regRes.body.user.passwordHash && !regRes.body.user.accessKeyHash, 'Sensitive hashes leaked in registration response!');
+  assert.strictEqual(regRes.body?.requiresVerification, true, 'Registration must require email verification');
+  assert.strictEqual(regRes.body?.user?.emailVerified, false, 'Newly registered user must start unverified');
+  assert.ok(!regRes.body?.token, 'Unverified registration must not issue a session token');
+  assert.ok(!regRes.body.user.password && !regRes.body.user.passwordHash, 'Sensitive hashes leaked in registration response!');
   const createdUserId = regRes.body.user.id;
-  console.log('[Pass] Custom Employer Registration created sanitized record:', createdUserId);
+  console.log('[Pass] Custom Employer Registration created unverified sanitized record without Access Key:', createdUserId);
 
   const dupRes = await apiJson('/api/auth/check-duplicate', {
     method: 'POST',
@@ -144,91 +175,24 @@ async function main() {
   assert.strictEqual(dupRes.body?.exists, true);
   console.log('[Pass] Duplicate email check works cleanly.');
 
-  // 5-Digit Access Key PIN recovery (bad PIN then good PIN -> JWT)
-  const badPinRes = await apiJson('/api/auth/verify-access-key', {
+  const blockedLoginRes = await apiJson('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: testEmail, accessKey: '99999' })
+    body: JSON.stringify({ email: testEmail, password: initialPass })
   });
-  assert.strictEqual(badPinRes.status, 400);
+  assert.strictEqual(blockedLoginRes.status, 403, 'Unverified login must be blocked with HTTP 403');
+  assert.strictEqual(blockedLoginRes.body?.code, 'EMAIL_NOT_VERIFIED');
+  console.log('[Pass] Unverified account login blocked cleanly with HTTP 403.');
 
-  const goodPinRes = await apiJson('/api/auth/verify-access-key', {
+  const forgotRes = await apiJson('/api/auth/forgot-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: testEmail, accessKey: accessKeyPin })
+    body: JSON.stringify({ email: 'nonexistent.verify@gulfaro-test.example.com' })
   });
-  assert.strictEqual(goodPinRes.status, 200, `PIN verification failed: ${JSON.stringify(goodPinRes.body)}`);
-  assert.ok(goodPinRes.body?.token, '10-minute reset JWT not returned');
+  assert.strictEqual(forgotRes.status, 200);
+  console.log('[Pass] Forgot password endpoint responds with anti-enumeration HTTP 200.');
 
-  const jwtResetRes = await apiJson('/api/auth/reset-password-access-key', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resetToken: goodPinRes.body.token, newPassword: rotatedPass })
-  });
-  assert.strictEqual(jwtResetRes.status, 200, `JWT password reset failed: ${JSON.stringify(jwtResetRes.body)}`);
-
-  const loginRes = await apiJson('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: testEmail, password: rotatedPass })
-  });
-  assert.strictEqual(loginRes.status, 200, `Login with rotated password failed: ${JSON.stringify(loginRes.body)}`);
-  assert.ok(!loginRes.body.user.passwordHash && !loginRes.body.user.accessKeyHash, 'Sensitive hashes leaked in login response!');
-  console.log('[Pass] 5-digit Access Key PIN recovery + JWT password reset + PBKDF2 login verified.');
-
-  // 5. Employer Job Publish + No External Links + Delete
-  const badLinkJobRes = await apiJson('/api/jobs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: createdUserId,
-      title: 'Site Engineer',
-      company: 'VerifyTest Contracting Co.',
-      country: 'saudi-arabia',
-      city: 'Riyadh',
-      category: 'engineering-construction',
-      employmentType: 'full-time',
-      workMode: 'on-site',
-      contactPerson: 'Muhammad Haroon',
-      contactEmail: testEmail,
-      contactPhone: testPhone,
-      description: 'Apply at https://external-careers.example.com today.'
-    })
-  });
-  assert.strictEqual(badLinkJobRes.status, 400, 'No-external-links policy must block URLs in description');
-
-  const createJobRes = await apiJson('/api/jobs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: createdUserId,
-      title: 'Electrical Site Supervisor',
-      company: 'VerifyTest Contracting Co.',
-      country: 'saudi-arabia',
-      city: 'Riyadh',
-      category: 'engineering-construction',
-      employmentType: 'full-time',
-      workMode: 'on-site',
-      vacanciesCount: 2,
-      salaryDisplay: '8,500 SAR / month',
-      currency: 'SAR',
-      contactPerson: 'Muhammad Haroon',
-      contactEmail: testEmail,
-      contactPhone: testPhone,
-      description: 'Supervising industrial electrical installations across Riyadh commercial sites. Direct email or phone inquiries.'
-    })
-  });
-  assert.strictEqual(createJobRes.status, 201, `Job creation failed: ${JSON.stringify(createJobRes.body)}`);
-  const createdJobId = createJobRes.body.id;
-
-  const delJobRes = await apiJson(`/api/jobs/${createdJobId}?userId=${encodeURIComponent(createdUserId)}`, {
-    method: 'DELETE',
-    headers: { 'x-gulfaro-user-id': createdUserId }
-  });
-  assert.strictEqual(delJobRes.status, 200, `Job deletion failed: ${JSON.stringify(delJobRes.body)}`);
-  console.log('[Pass] Job publish + external-link blocking + ownership delete verified.');
-
-  // 6. Isolated Super Admin Authentication + Session + Backup Download + Cleanup of temporary user
+  // 5. Isolated Super Admin Authentication + Session + Activate & Cleanup verification user
   const saLoginRes = await apiJson('/api/super-admin/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -238,6 +202,87 @@ async function main() {
   if (!saLoginRes.body.requiresTwoFactor) {
     const saToken = saLoginRes.body.token;
     assert.ok(saToken, 'Missing Super Admin session token');
+
+    // Verify user via Super Admin to test authenticated job posting & deletion
+    const verifyPatch = await apiJson(`/api/super-admin/users/${createdUserId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${saToken}`
+      },
+      body: JSON.stringify({ emailVerified: true })
+    });
+    assert.strictEqual(verifyPatch.status, 200);
+
+    const loginRes = await apiJson('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testEmail, password: initialPass })
+    });
+    assert.strictEqual(loginRes.status, 200, `Verified login failed: ${JSON.stringify(loginRes.body)}`);
+    assert.ok(loginRes.body?.token, 'Verified login did not return JWT token');
+    assert.ok(!loginRes.body.user.passwordHash, 'Sensitive passwordHash leaked in login response!');
+
+    // Job publish + No External Links + Delete
+    const badLinkJobRes = await apiJson('/api/jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginRes.body.token}`
+      },
+      body: JSON.stringify({
+        userId: createdUserId,
+        title: 'Site Engineer',
+        company: 'VerifyTest Contracting Co.',
+        country: 'saudi-arabia',
+        city: 'Riyadh',
+        category: 'engineering-construction',
+        employmentType: 'full-time',
+        workMode: 'on-site',
+        contactPerson: 'Muhammad Haroon',
+        contactEmail: testEmail,
+        contactPhone: testPhone,
+        description: 'Apply at https://external-careers.example.com today.'
+      })
+    });
+    assert.strictEqual(badLinkJobRes.status, 400, 'No-external-links policy must block URLs in description');
+
+    const createJobRes = await apiJson('/api/jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginRes.body.token}`
+      },
+      body: JSON.stringify({
+        userId: createdUserId,
+        title: 'Electrical Site Supervisor',
+        company: 'VerifyTest Contracting Co.',
+        country: 'saudi-arabia',
+        city: 'Riyadh',
+        category: 'engineering-construction',
+        employmentType: 'full-time',
+        workMode: 'on-site',
+        vacanciesCount: 2,
+        salaryDisplay: '8,500 SAR / month',
+        currency: 'SAR',
+        contactPerson: 'Muhammad Haroon',
+        contactEmail: testEmail,
+        contactPhone: testPhone,
+        description: 'Supervising industrial electrical installations across Riyadh commercial sites. Direct email or phone inquiries.'
+      })
+    });
+    assert.strictEqual(createJobRes.status, 201, `Job creation failed: ${JSON.stringify(createJobRes.body)}`);
+    const createdJobId = createJobRes.body.id;
+
+    const delJobRes = await apiJson(`/api/jobs/${createdJobId}?userId=${encodeURIComponent(createdUserId)}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${loginRes.body.token}`,
+        'x-gulfaro-user-id': createdUserId
+      }
+    });
+    assert.strictEqual(delJobRes.status, 200, `Job deletion failed: ${JSON.stringify(delJobRes.body)}`);
+    console.log('[Pass] Verified login + job publish + external-link blocking + ownership delete verified.');
 
     const sessionCheck = await apiJson('/api/super-admin/auth/session', {
       headers: { Authorization: `Bearer ${saToken}` }

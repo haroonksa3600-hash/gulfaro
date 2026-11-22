@@ -597,7 +597,7 @@ export function createSuperAdminRouter(): express.Router {
 
       const jobSeekers = users.filter(u => u.role === 'job_seeker');
       const employers = users.filter(u => u.role === 'employer');
-      const verifiedEmployers = employers.filter(u => u.emailVerified !== false);
+      const verifiedEmployers = employers.filter(u => u.emailVerified === true);
       const suspendedUsers = users.filter(u => u.status === 'suspended' || u.status === 'banned');
 
       const activeJobs = jobs.filter(j => j.status === 'active');
@@ -772,7 +772,7 @@ export function createSuperAdminRouter(): express.Router {
       ]);
 
       const enriched = users.map(u => {
-        const { password: _p, passwordHash: _ph, accessKeyHash: _ak, ...safe } = u;
+        const { password: _p, passwordHash: _ph, ...safe } = u;
         const userJobs = jobs.filter(
           j => Boolean(j.userId) && j.userId === u.id
         );
@@ -896,8 +896,9 @@ export function createSuperAdminRouter(): express.Router {
       if (updates.newPassword && String(updates.newPassword).length >= 8) {
         users[idx].password = undefined;
         users[idx].passwordHash = hashPassword(String(updates.newPassword));
-        users[idx].failedAttempts = 0;
-        users[idx].lockoutUntil = null;
+        users[idx].loginFailedAttempts = 0;
+        users[idx].loginLockoutUntil = null;
+        users[idx].forceLogoutBefore = Date.now();
       }
 
       if (updates.forceLogout) {
@@ -920,7 +921,7 @@ export function createSuperAdminRouter(): express.Router {
         ip: getClientIp(req)
       });
 
-      const { password: _p, passwordHash: _ph, accessKeyHash: _ak, ...safe } = users[idx];
+      const { password: _p, passwordHash: _ph, ...safe } = users[idx];
       res.json({ success: true, user: safe });
     } catch {
       res.status(500).json({ error: 'Failed to update user.' });
@@ -935,7 +936,10 @@ export function createSuperAdminRouter(): express.Router {
       if (!user) return res.status(404).json({ error: 'User not found.' });
 
       const { sendRealPasswordResetEmail } = await import('./authService');
-      const result = await sendRealPasswordResetEmail(user.email, getAppBaseUrl(req), getClientIp(req));
+      const result = await sendRealPasswordResetEmail(user.email, getAppBaseUrl(req), getClientIp(req), {
+        byAdmin: true,
+        triggeredBy: req.admin!.username
+      });
       await appendAuditLogEntry({
         adminId: req.admin!.id,
         adminUsername: req.admin!.username,
@@ -946,7 +950,7 @@ export function createSuperAdminRouter(): express.Router {
         ip: getClientIp(req)
       });
 
-      if (!result.success) return res.status(400).json({ error: result.message });
+      if (!result.success) return res.status(result.status || 400).json({ error: result.message });
       res.json({ success: true, message: result.message });
     } catch {
       res.status(500).json({ error: 'Failed to send password reset email.' });
@@ -1381,16 +1385,22 @@ export function createSuperAdminRouter(): express.Router {
   router.get('/emails', requirePermission('emails'), async (_req: AuthenticatedAdminRequest, res: Response) => {
     try {
       const [settings, logs] = await Promise.all([getSiteSettings(), getEmailLogs()]);
-      const hasResend = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_'));
       const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+      const hasResend = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_'));
+      const senderAddr = process.env.EMAIL_FROM || process.env.SMTP_USER || 'info@gulfaro.net';
+      const senderName = process.env.EMAIL_FROM_NAME || 'Gulfaro';
 
       res.json({
         emailConfig: settings.emailConfig,
         providerStatus: {
-          activeProvider: hasResend ? 'Resend API (Configured)' : hasSmtp ? `SMTP (${process.env.SMTP_HOST})` : 'Not Configured',
+          activeProvider: hasSmtp
+            ? `Hostinger SMTP (${process.env.SMTP_HOST})`
+            : hasResend
+              ? 'Resend API (Fallback)'
+              : 'Not Configured',
           resendConfigured: hasResend,
           smtpConfigured: hasSmtp,
-          fromEnv: process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || 'security@gulfaro.com'
+          fromEnv: `${senderName} <${senderAddr}>`
         },
         logs: logs.slice(0, 250)
       });

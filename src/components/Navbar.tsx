@@ -201,7 +201,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Zone 3: Single Primary Action & Account / Menu Toggle */}
         <div className="flex items-center gap-2.5 shrink-0">
 
-          {currentUser?.role === 'employer' && (
+          {currentUser?.role === 'employer' && currentUser.emailVerified === true && (
             <button
               onClick={() => {
                 setIsMobileMenuOpen(false);
@@ -234,7 +234,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="px-4 py-2.5 border-b border-slate-800">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-bold text-sm text-white truncate">{currentUser.name}</p>
-                      {currentUser.emailVerified !== false && (
+                      {currentUser.emailVerified === true && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
                           <ShieldCheck className="w-3 h-3 text-emerald-400" />
                           <span>Verified</span>
@@ -248,7 +248,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
 
                   <div className="py-1">
-                    {currentUser.role === 'employer' && (
+                    {currentUser.role === 'employer' && currentUser.emailVerified === true && (
                       <button
                         onClick={() => {
                           setShowUserMenu(false);
@@ -361,7 +361,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <p className="font-bold text-white truncate">{currentUser.name}</p>
-                  {currentUser.emailVerified !== false && (
+                  {currentUser.emailVerified === true && (
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
                       <ShieldCheck className="w-3 h-3 text-emerald-400" />
                       <span>Verified</span>
@@ -399,7 +399,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {currentUser?.role === 'employer' && (
+          {currentUser?.role === 'employer' && currentUser.emailVerified === true && (
             <button
               onClick={() => {
                 setIsMobileMenuOpen(false);
@@ -448,7 +448,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {currentUser && (
               <>
-                {currentUser.role === 'employer' && (
+                {currentUser.role === 'employer' && currentUser.emailVerified === true && (
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);

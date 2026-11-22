@@ -63,7 +63,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 uppercase tracking-wide">
                   {currentUser.role.replace('_', ' ')}
                 </span>
-                {currentUser.emailVerified !== false && (
+                {currentUser.emailVerified === true && (
                   <span
                     className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
                     title="Verified Gulfaro Account"

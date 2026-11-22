@@ -259,12 +259,12 @@ async function main() {
     // 7. Password reset tokens
     for (const t of snapshot.datasets.resetTokens) {
       await client.query(
-        `INSERT INTO public.password_reset_tokens (token_hash, token_plain, email, expires_at, used, used_at, ip, created_at)
+        `INSERT INTO public.password_reset_tokens (token_hash, user_id, email, expires_at, used, used_at, ip, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (token_hash) DO NOTHING`,
         [
           t.tokenHash,
-          t.token || null,
+          t.userId || null,
           t.email.toLowerCase(),
           toIsoOrNull(t.expiresAt) || new Date().toISOString(),
           Boolean(t.used),

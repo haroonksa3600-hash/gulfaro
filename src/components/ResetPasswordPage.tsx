@@ -5,7 +5,7 @@ import { emailService } from '../services/emailService';
 interface ResetPasswordPageProps {
   tokenProp?: string | null;
   emailProp?: string | null;
-  onNavigateToSignIn: () => void;
+  onNavigateToSignIn: (notice?: string) => void;
   onNavigateToForgotPassword: () => void;
 }
 
@@ -84,7 +84,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
     e.preventDefault();
     setSubmitError(null);
 
-    if (!token || !email) {
+    if (!token) {
       setSubmitError('Invalid or expired reset link. Please request a new one.');
       return;
     }
@@ -112,16 +112,18 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
     setIsSubmitting(true);
 
     try {
-      const res = await emailService.resetPassword(token, email, newPassword, confirmPassword);
+      const res = await emailService.resetPassword(token, email || undefined, newPassword, confirmPassword);
 
       if (!res.success) {
         setSubmitError(res.error || 'Failed to reset password. Please request a new link.');
       } else {
-        // REQUIREMENT 4: Show exact message and redirect after 2 seconds
-        setSubmitSuccess('Password reset successful! Redirecting to login...');
+        const successText =
+          res.message ||
+          'Your password has been successfully reset. You can now log in using your new password.';
+        setSubmitSuccess(successText);
         setTimeout(() => {
-          onNavigateToSignIn();
-        }, 2000);
+          onNavigateToSignIn(successText);
+        }, 1800);
       }
     } catch (err: any) {
       setSubmitError(err.message || 'An unexpected error occurred.');
@@ -137,7 +139,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
         <div className="text-center space-y-2">
           <button
             type="button"
-            onClick={onNavigateToSignIn}
+            onClick={() => onNavigateToSignIn()}
             className="inline-flex items-center bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm focus:outline-none mb-3 hover:opacity-95 transition-all"
             title="Return to Gulfaro"
             aria-label="Return to Gulfaro Homepage"
@@ -179,7 +181,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                     {validationError || 'Invalid or expired reset link. Please request a new one.'}
                   </p>
                   <p className="text-[11px] text-rose-600">
-                    For your security, Gulfaro password reset links expire after 1 hour or after being used.
+                    For your security, Gulfaro password reset links expire after 30 minutes or after being used.
                   </p>
                 </div>
               </div>
@@ -196,7 +198,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
 
                 <button
                   type="button"
-                  onClick={onNavigateToSignIn}
+                  onClick={() => onNavigateToSignIn()}
                   className="w-full py-2 px-4 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
@@ -209,14 +211,14 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
           {/* Valid Token -> Show Reset Password Form */}
           {!isValidating && isTokenValid && (
             <div className="space-y-4 animate-in fade-in">
-              
-              {/* Account Identity Badge */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                <span className="text-slate-500 font-medium">Account:</span>
-                <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {email}
-                </span>
-              </div>
+              {email && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Account:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    {email}
+                  </span>
+                </div>
+              )}
 
               {/* Submission Error Banner */}
               {submitError && (
@@ -228,10 +230,17 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
 
               {/* Submission Success Banner */}
               {submitSuccess && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2.5">
                   <CheckCircle2 className="w-7 h-7 text-emerald-600 mx-auto" />
                   <p className="text-xs font-bold text-emerald-900">{submitSuccess}</p>
-                  <p className="text-[11px] text-emerald-700">Please wait while we take you to the Sign In page...</p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToSignIn(submitSuccess)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-teal-600 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                  >
+                    <span>Go to Sign In</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
@@ -357,7 +366,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                       {isSubmitting ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
-                          <span>Updating password in gulfaro_users...</span>
+                          <span>Updating Password...</span>
                         </>
                       ) : (
                         <>
@@ -378,7 +387,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <button
               type="button"
-              onClick={onNavigateToSignIn}
+              onClick={() => onNavigateToSignIn()}
               className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-semibold transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

@@ -39,6 +39,7 @@ import { RegisterModal } from './components/RegisterModal';
 import { AuthPage } from './components/AuthPage';
 import { ForgotPasswordPage } from './components/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/ResetPasswordPage';
+import { VerifyEmailPage } from './components/VerifyEmailPage';
 import { AdBanner } from './components/AdBanner';
 import { LegalModal, CookieConsentBanner } from './components/LegalModals';
 import { Footer } from './components/Footer';
@@ -88,6 +89,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'jobs' | 'dashboard' | 'safety' | 'countries' | 'auth' | 'my-jobs'>('jobs');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authRole, setAuthRole] = useState<'job_seeker' | 'employer'>('job_seeker');
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
@@ -288,10 +290,21 @@ export default function App() {
       return;
     }
 
+    if (cleanPath === '/verify-email') {
+      applyRouteSeo({
+        title: 'Email Verification | Gulfaro',
+        description: 'Verify your email address to activate your Gulfaro Job Seeker or Employer account.',
+        canonicalPath: '/verify-email',
+        robots: 'noindex, nofollow',
+        jsonLd: null
+      });
+      return;
+    }
+
     if (cleanPath === '/forgot-password') {
       applyRouteSeo({
         title: 'Account & Password Recovery | Gulfaro',
-        description: 'Recover access to your Gulfaro employer or job seeker account using your registered email or 5-digit access key.',
+        description: 'Recover access to your Gulfaro employer or job seeker account via email password reset.',
         canonicalPath: '/forgot-password',
         robots: 'noindex, nofollow',
         jsonLd: null
@@ -650,7 +663,7 @@ export default function App() {
   }, [jobs, currentUser]);
 
   const handleOpenPostJob = () => {
-    if (currentUser?.role !== 'employer') {
+    if (currentUser?.role !== 'employer' || currentUser.emailVerified !== true) {
       navigateTo('/unauthorized');
       return;
     }
@@ -663,6 +676,7 @@ export default function App() {
   const handleEditJob = (job: JobAd) => {
     const isOwner =
       currentUser?.role === 'employer' &&
+      currentUser.emailVerified === true &&
       Boolean(job.userId) &&
       job.userId === currentUser.id;
     if (!isOwner && currentUser?.role !== 'admin') {
@@ -698,10 +712,12 @@ export default function App() {
 
   const handleOpenAuth = (
     mode: 'login' | 'signup',
-    preferredRole: 'job_seeker' | 'employer' = 'job_seeker'
+    preferredRole: 'job_seeker' | 'employer' = 'job_seeker',
+    notice: string | null = null
   ) => {
     setAuthMode(mode);
     setAuthRole(preferredRole);
+    setAuthNotice(notice);
     setActiveTab('auth');
     setSelectedJob(null);
     setJobNotFoundSlug(null);
@@ -713,8 +729,9 @@ export default function App() {
   };
 
   const handleAuthSuccess = (user: User) => {
+    setAuthNotice(null);
     setCurrentUser(user);
-    if (user.role === 'employer') {
+    if (user.role === 'employer' && user.emailVerified === true) {
       setActiveTab('my-jobs');
       navigateTo('/my-job-posts');
       storageService.fetchEmployerJobsAsync().then(() => reloadJobs()).catch(() => {});
@@ -726,6 +743,7 @@ export default function App() {
 
   const handleLogout = () => {
     storageService.logoutUser();
+    setAuthNotice(null);
     setCurrentUser(null);
     setActiveTab('jobs');
     navigateTo('/');
@@ -961,14 +979,20 @@ export default function App() {
   const matchedInfoRoute = publicInfoRoutes.find(r => normalizedPath === `/${r}`);
 
   const renderMainBody = () => {
+    if (normalizedPath === '/verify-email' || currentPath.startsWith('/verify-email')) {
+      return (
+        <VerifyEmailPage
+          onNavigateToSignIn={notice => handleOpenAuth('login', 'job_seeker', notice || null)}
+          onNavigateHome={() => navigateTo('/')}
+        />
+      );
+    }
+
     if (normalizedPath === '/forgot-password' || currentPath.startsWith('/forgot-password')) {
       return (
         <ForgotPasswordPage
           onNavigateToSignIn={() => handleOpenAuth('login')}
           onNavigateToSignUp={() => handleOpenAuth('signup')}
-          onNavigateToResetPassword={(tok, em) => {
-            navigateTo(`/reset-password?token=${encodeURIComponent(tok)}&email=${encodeURIComponent(em)}`);
-          }}
           onNavigateHome={() => navigateTo('/')}
         />
       );
@@ -979,7 +1003,7 @@ export default function App() {
         <ResetPasswordPage
           tokenProp={new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('token')}
           emailProp={new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('email')}
-          onNavigateToSignIn={() => handleOpenAuth('login')}
+          onNavigateToSignIn={notice => handleOpenAuth('login', 'job_seeker', notice || null)}
           onNavigateToForgotPassword={() => navigateTo('/forgot-password')}
         />
       );
@@ -997,7 +1021,7 @@ export default function App() {
     }
 
     if (normalizedPath === '/post-job' || normalizedPath === '/post') {
-      return currentUser?.role === 'employer' ? (
+      return currentUser?.role === 'employer' && currentUser.emailVerified === true ? (
         <PostJobPage
           currentUser={currentUser}
           editingJob={editingJob}
@@ -1029,7 +1053,7 @@ export default function App() {
     }
 
     if (normalizedPath === '/my-job-posts' || normalizedPath === '/manage-jobs' || activeTab === 'my-jobs') {
-      return currentUser?.role === 'employer' ? (
+      return currentUser?.role === 'employer' && currentUser.emailVerified === true ? (
         <ManageJobsView
           currentUser={currentUser}
           jobs={jobs}
@@ -1054,8 +1078,12 @@ export default function App() {
         <AuthPage
           initialMode={authMode}
           initialRole={authRole}
+          initialNotice={authNotice}
           onAuthSuccess={handleAuthSuccess}
-          onCancel={() => setActiveTab('jobs')}
+          onCancel={() => {
+            setAuthNotice(null);
+            setActiveTab('jobs');
+          }}
           onNavigateToForgotPassword={() => navigateTo('/forgot-password')}
         />
       );
@@ -1109,7 +1137,7 @@ export default function App() {
     }
 
     if (activeTab === 'dashboard') {
-      if (currentUser?.role === 'employer') {
+      if (currentUser?.role === 'employer' && currentUser.emailVerified === true) {
         return (
           <ManageJobsView
             currentUser={currentUser}
@@ -1574,7 +1602,7 @@ export default function App() {
           setSelectedJob(null);
           setJobNotFoundSlug(null);
           if (tab === 'my-jobs') {
-            if (currentUser?.role === 'employer') {
+            if (currentUser?.role === 'employer' && currentUser.emailVerified === true) {
               navigateTo('/my-job-posts');
             } else {
               navigateTo('/unauthorized');
@@ -1637,7 +1665,11 @@ export default function App() {
       <RegisterModal
         isOpen={isRegisterModalOpen}
         onClose={() => setIsRegisterModalOpen(false)}
-        onUserRegistered={user => setCurrentUser(user)}
+        onUserRegistered={user => {
+          if (user.emailVerified === true) {
+            setCurrentUser(user);
+          }
+        }}
       />
 
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />

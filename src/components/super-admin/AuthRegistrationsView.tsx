@@ -99,7 +99,7 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
         <div>
           <h2 className="text-lg font-bold text-slate-900">Registration, Auth & Session Controls</h2>
           <p className="text-xs text-slate-500">
-            Configure automatic onboarding, anti-spam rules, rate limiting, and audit live login sessions.
+            Configure user onboarding, email verification policy, anti-spam rules, rate limiting, and audit live login sessions.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -127,7 +127,7 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
           <label className="flex items-center justify-between cursor-pointer">
             <div>
               <span className="font-semibold text-slate-800 block">Allow Job Seeker Registrations</span>
-              <span className="text-[11px] text-slate-500">New Job Seeker accounts are automatically verified and activated upon signup.</span>
+              <span className="text-[11px] text-slate-500">New Job Seeker accounts must verify their email address via info@gulfaro.net before signing in.</span>
             </div>
             <input
               type="checkbox"
@@ -140,7 +140,7 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
           <label className="flex items-center justify-between cursor-pointer">
             <div>
               <span className="font-semibold text-slate-800 block">Allow Employer Registrations</span>
-              <span className="text-[11px] text-slate-500">New Employer accounts are automatically verified and activated upon signup.</span>
+              <span className="text-[11px] text-slate-500">New Employer accounts must verify their email address via info@gulfaro.net before signing in and posting jobs.</span>
             </div>
             <input
               type="checkbox"
@@ -171,9 +171,9 @@ export const AuthRegistrationsView: React.FC<AuthRegistrationsViewProps> = ({ on
                 onChange={e => setRegistration({ ...registration, emailVerificationMode: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50"
               >
-                <option value="automatic">Automatic Verification & Activation</option>
-                <option value="required_for_badge">Automatic (Legacy Mode)</option>
-                <option value="optional">Optional</option>
+                <option value="required">Mandatory Email Verification (info@gulfaro.net)</option>
+                <option value="required_for_badge">Mandatory + Verified Badge Sync</option>
+                <option value="optional">Optional (Legacy Override)</option>
               </select>
             </div>
             <div>

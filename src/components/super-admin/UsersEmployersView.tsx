@@ -194,7 +194,7 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
             {mode === 'employers' ? 'Employer & Company Accounts' : 'Users & Accounts Directory'}
           </h2>
           <p className="text-xs text-slate-500">
-            New accounts register & activate automatically. Manage verification badges, posting limits, suspensions, and password resets here.
+            New accounts start unverified and require email verification via info@gulfaro.net before signing in. Manage verification status, posting limits, suspensions, and password resets here.
           </p>
         </div>
         <button
@@ -304,6 +304,9 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
                         {u.role === 'employer' && u.companyName && (
                           <div className="text-[10px] text-slate-400">Contact: {u.name}</div>
                         )}
+                        <div className="text-[10px] text-slate-400">
+                          Registered: {new Date(u.createdAt).toLocaleDateString()}
+                        </div>
                       </td>
                       <td className="py-3 px-3">
                         <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
@@ -500,7 +503,10 @@ export const UsersEmployersView: React.FC<UsersEmployersViewProps> = ({ mode, on
               <div className="flex justify-between"><span className="text-slate-500">User ID:</span><span className="font-mono">{selectedUser.id}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Created:</span><span>{new Date(selectedUser.createdAt).toLocaleString()}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Last Login IP:</span><span className="font-mono">{selectedUser.lastLoginIp || 'Not recorded'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Verified:</span><span>{selectedUser.emailVerified ? 'Yes' : 'No'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Verified:</span><span>{selectedUser.emailVerified ? 'Yes' : 'No (Pending Email Verification)'}</span></div>
+              {selectedUser.emailVerifiedAt && (
+                <div className="flex justify-between"><span className="text-slate-500">Verified At:</span><span>{new Date(selectedUser.emailVerifiedAt).toLocaleString()}</span></div>
+              )}
             </div>
 
             {selectedUser.jobsList && selectedUser.jobsList.length > 0 && (

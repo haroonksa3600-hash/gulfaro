@@ -1,25 +1,42 @@
 import crypto from 'crypto';
 import nodemailer, { Transporter } from 'nodemailer';
 import { Resend } from 'resend';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import {
   appendEmailLogEntry,
+  checkDbRateLimit,
+  consumeEmailVerificationToken,
+  consumePasswordResetToken,
+  createEmailVerificationToken,
+  createPasswordResetToken,
+  findResetTokenByHash,
   findUserByEmail,
-  getResetTokens,
+  findUserById,
   getSiteSettings,
-  getVerificationCodes,
   readJobsJson,
   readUsersJson,
-  saveResetTokens,
   saveUser,
-  saveVerificationCodes,
   syncEmployerVerifiedOnJobs,
   writeJobsJson,
   writeUsersJson
 } from './repository';
 
-// Resend Client Factory
+export const OFFICIAL_SENDER_EMAIL = 'info@gulfaro.net';
+export const OFFICIAL_SENDER_NAME = 'Gulfaro';
+export const GENERIC_FORGOT_PASSWORD_MESSAGE =
+  'If an account exists with this email address, you will receive a password reset link shortly.';
+export const GENERIC_RESEND_VERIFICATION_MESSAGE =
+  'If an unverified Gulfaro account exists with that email address, a new verification link has been sent.';
+export const REGISTRATION_SUCCESS_MESSAGE =
+  'Your registration was successful. Please check your email and click the verification link to activate your Gulfaro account.';
+export const PASSWORD_RESET_SUCCESS_MESSAGE =
+  'Your password has been successfully reset. You can now log in using your new password.';
+
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const JWT_SESSION_SECRET = process.env.JWT_SECRET || 'gulfaro-user-session-jwt-secret-2026';
+
 let resendInstance: Resend | null = null;
 export function getResendClient(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
@@ -30,19 +47,26 @@ export function getResendClient(): Resend | null {
   return resendInstance;
 }
 
-export function getSenderEmail(defaultCategory: 'security' | 'verify' = 'security'): string {
-  const fromEnv = (process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || '').trim();
-  if (fromEnv) {
-    // Resend strictly forbids sending from public webmail domains (like @gmail.com, @yahoo.com)
-    // because DMARC/SPF cannot authenticate third-party sending without owning the domain.
-    if (/@(gmail\.com|yahoo\.com|outlook\.com|hotmail\.com)$/i.test(fromEnv.replace(/>/g, ''))) {
-      console.warn(`[Gulfaro Resend] Warning: Senders cannot use public webmail address "${fromEnv}". Using Resend onboarding address for delivery.`);
-      return `Gulfaro ${defaultCategory === 'security' ? 'Security' : 'Verification'} <onboarding@resend.dev>`;
-    }
-    return fromEnv;
+export function isSmtpConfigured(): boolean {
+  return Boolean(
+    process.env.SMTP_HOST?.trim() &&
+      process.env.SMTP_USER?.trim() &&
+      process.env.SMTP_PASS?.trim()
+  );
+}
+
+export function getSenderEmail(): string {
+  const rawEmail = (process.env.EMAIL_FROM || process.env.SMTP_USER || OFFICIAL_SENDER_EMAIL).trim();
+  const rawName = (process.env.EMAIL_FROM_NAME || OFFICIAL_SENDER_NAME).trim();
+  if (rawEmail.includes('<') && rawEmail.includes('>')) {
+    return rawEmail;
   }
-  // Default Gulfaro domain sender
-  return `Gulfaro ${defaultCategory === 'security' ? 'Security' : 'Verification'} <${defaultCategory}@gulfaro.com>`;
+  return `${rawName} <${rawEmail}>`;
+}
+
+export function getReplyToEmail(configuredReplyTo?: string): string {
+  const candidate = (configuredReplyTo || process.env.EMAIL_FROM || OFFICIAL_SENDER_EMAIL).trim();
+  return candidate || OFFICIAL_SENDER_EMAIL;
 }
 
 export interface UserRecord {
@@ -62,11 +86,10 @@ export interface UserRecord {
   headline?: string;
   professionalTitle?: string;
   bio?: string;
+  iqamaStatus?: string;
+  experienceYears?: string;
   emailVerified?: boolean;
   emailVerifiedAt?: string;
-  accessKeyHash?: string; // Bcrypt hash of 5-digit numeric PIN
-  failedAttempts?: number; // Failed PIN recovery attempts
-  lockoutUntil?: number | null; // 15-minute lockout timestamp
   loginFailedAttempts?: number;
   loginLockoutUntil?: number | null;
   status?: 'active' | 'suspended' | 'banned' | 'deactivated' | 'pending_deletion';
@@ -81,7 +104,7 @@ export interface UserRecord {
 
 export interface ResetTokenRecord {
   tokenHash: string;
-  token?: string;
+  userId?: string;
   email: string;
   expiresAt: number;
   used: boolean;
@@ -90,46 +113,23 @@ export interface ResetTokenRecord {
   ip?: string;
 }
 
-export interface VerificationCodeRecord {
-  code: string;
-  token?: string;
-  email: string;
-  expiresAt: number;
-  used: boolean;
-  usedAt?: number;
-  createdAt: number;
-  ip?: string;
-}
-
-// In-memory rate limiting map: key -> timestamps[]
-const rateLimitMap = new Map<string, number[]>();
-
-export function checkRateLimit(key: string, maxAttempts = 5, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const timestamps = rateLimitMap.get(key) || [];
-  const validTimestamps = timestamps.filter(t => now - t < windowMs);
-
-  if (validTimestamps.length >= maxAttempts) {
-    rateLimitMap.set(key, validTimestamps);
-    return false; // Rate limited
-  }
-
-  validTimestamps.push(now);
-  rateLimitMap.set(key, validTimestamps);
-  return true;
+function escapeEmailHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
  * Normalizes phone numbers for matching, indexing, and comparison across GCC formats.
- * Strips formatting, handles GCC country codes (+966, +971, +974, +965, +973, +968),
- * and isolates the national significant number.
  */
 export function normalizePhone(rawPhone?: string | null): { digits: string; nationalDigits: string; e164: string } | null {
   if (!rawPhone || typeof rawPhone !== 'string') return null;
   const digits = rawPhone.replace(/\D/g, '');
   if (digits.length < 7) return null;
 
-  // Check GCC country codes: 966 (KSA), 971 (UAE), 974 (Qatar), 965 (Kuwait), 973 (Bahrain), 968 (Oman)
   let national = digits;
   const gccCodes = ['966', '971', '974', '965', '973', '968'];
   for (const code of gccCodes) {
@@ -139,7 +139,6 @@ export function normalizePhone(rawPhone?: string | null): { digits: string; nati
     }
   }
 
-  // Strip leading zero for local trunk formats (e.g. 0541234567 -> 541234567)
   if (national.startsWith('0') && national.length > 7) {
     national = national.slice(1);
   }
@@ -151,10 +150,6 @@ export function normalizePhone(rawPhone?: string | null): { digits: string; nati
   };
 }
 
-/**
- * Checks whether two phone numbers match, accounting for country codes, spaces,
- * leading zeros, and formatting differences.
- */
 export function phonesMatch(phoneA?: string | null, phoneB?: string | null): boolean {
   if (!phoneA || !phoneB) return false;
   const cleanA = phoneA.trim();
@@ -166,15 +161,12 @@ export function phonesMatch(phoneA?: string | null, phoneB?: string | null): boo
   const normB = normalizePhone(cleanB);
   if (!normA || !normB) return false;
 
-  // Direct digits match (e.g. "966501234567" === "966501234567")
   if (normA.digits === normB.digits) return true;
 
-  // National significant number match (e.g. "0501234567" matches "501234567" or "+966501234567")
   if (normA.nationalDigits.length >= 7 && normA.nationalDigits === normB.nationalDigits) {
     return true;
   }
 
-  // Suffix match (e.g. one has country code prefix and other does not)
   if (
     (normA.digits.length > normB.nationalDigits.length && normA.digits.endsWith(normB.nationalDigits)) ||
     (normB.digits.length > normA.nationalDigits.length && normB.digits.endsWith(normA.nationalDigits))
@@ -185,9 +177,6 @@ export function phonesMatch(phoneA?: string | null, phoneB?: string | null): boo
   return false;
 }
 
-/**
- * Clean phone string for consistent storage while preserving readability.
- */
 export function cleanPhone(phone?: string | null): string | undefined {
   if (!phone || typeof phone !== 'string') return undefined;
   const trimmed = phone.trim();
@@ -211,7 +200,19 @@ export function writeJobsFile(jobs: any[]): void {
   writeJobsJson(jobs);
 }
 
-// Password hashing helper using PBKDF2 with 100,000 iterations and salt
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, error: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/\d/.test(password)) {
+    return { valid: false, error: 'Password must contain at least one number (0-9).' };
+  }
+  return { valid: true };
+}
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
@@ -219,780 +220,28 @@ export function hashPassword(password: string): string {
 }
 
 export function verifyPassword(password: string, stored: string): boolean {
-  if (!stored) return false;
+  if (!stored || !password) return false;
 
-  // Handle PBKDF2 hashed password
   if (stored.startsWith('pbkdf2$')) {
     const parts = stored.split('$');
     if (parts.length === 3) {
       const salt = parts[1];
       const originalHash = parts[2];
       const testHash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-      return crypto.timingSafeEqual(Buffer.from(originalHash, 'hex'), Buffer.from(testHash, 'hex'));
+      const origBuf = Buffer.from(originalHash, 'hex');
+      const testBuf = Buffer.from(testHash, 'hex');
+      if (origBuf.length !== testBuf.length) return false;
+      return crypto.timingSafeEqual(origBuf, testBuf);
     }
   }
 
-  // Handle legacy plain text passwords gracefully while upgrading
-  const plainMatch = password === stored || (stored === 'password123' && password === 'password123');
-  return plainMatch;
+  // Graceful legacy support for un-migrated plain-text seed accounts (upgraded on login)
+  return password === stored;
 }
 
-// Hash token for safe storage
 export function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token.trim()).digest('hex');
 }
-
-// Email Transporter Factory
-let cachedTransporter: Transporter | null = null;
-let cachedTransporterType = '';
-
-export async function getEmailTransporter(): Promise<{ transporter: Transporter; providerName: string }> {
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const smtpPort = Number(process.env.SMTP_PORT) || 587;
-
-  // 1. Custom SMTP Server configured via environment variables
-  if (smtpHost && smtpUser && smtpPass) {
-    if (cachedTransporter && cachedTransporterType === 'smtp') {
-      return { transporter: cachedTransporter, providerName: `SMTP (${smtpHost})` };
-    }
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      }
-    });
-    cachedTransporter = transporter;
-    cachedTransporterType = 'smtp';
-    return { transporter, providerName: `SMTP (${smtpHost})` };
-  }
-
-  // 2. Direct Ethereal SMTP Live Test Transport (standard RFC 5322 real SMTP delivery)
-  if (cachedTransporter && cachedTransporterType === 'ethereal') {
-    return { transporter: cachedTransporter, providerName: 'Ethereal SMTP Engine' };
-  }
-
-  const testAccount = await nodemailer.createTestAccount();
-  const etherealTransporter = nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
-    secure: false,
-    auth: {
-      user: testAccount.user,
-      pass: testAccount.pass
-    }
-  });
-
-  cachedTransporter = etherealTransporter;
-  cachedTransporterType = 'ethereal';
-  return { transporter: etherealTransporter, providerName: `Ethereal Live SMTP (${testAccount.user})` };
-}
-
-// Generate the responsive, branded HTML email template for Gul Faro
-export function generatePasswordResetEmailHtml(name: string, resetLink: string, expirationText = '1 hour'): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Gul Faro Password</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      color: #1e293b;
-      -webkit-font-smoothing: antialiased;
-    }
-    .wrapper {
-      width: 100%;
-      table-layout: fixed;
-      background-color: #f8fafc;
-      padding: 40px 0;
-    }
-    .container {
-      max-width: 580px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 16px;
-      overflow: hidden;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-    }
-    .header {
-      background-color: #090d16;
-      padding: 28px 32px;
-      text-align: center;
-      border-bottom: 2px solid #0d9488;
-    }
-    .brand-title {
-      color: #ffffff;
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      margin: 0;
-    }
-    .brand-tagline {
-      color: #94a3b8;
-      font-size: 11px;
-      margin-top: 4px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    .content {
-      padding: 36px 32px;
-    }
-    .greeting {
-      font-size: 18px;
-      font-weight: 700;
-      color: #0f172a;
-      margin-top: 0;
-      margin-bottom: 16px;
-    }
-    .text {
-      font-size: 14px;
-      line-height: 1.6;
-      color: #475569;
-      margin-bottom: 20px;
-    }
-    .btn-container {
-      text-align: center;
-      margin: 32px 0;
-    }
-    .btn {
-      display: inline-block;
-      background-color: #0d9488;
-      color: #ffffff !important;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 700;
-      padding: 14px 32px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(13, 148, 136, 0.25);
-    }
-    .link-fallback {
-      background-color: #f1f5f9;
-      border-radius: 8px;
-      padding: 14px;
-      font-size: 12px;
-      color: #475569;
-      word-break: break-all;
-      margin-top: 24px;
-      border: 1px solid #e2e8f0;
-    }
-    .link-fallback a {
-      color: #0d9488;
-      text-decoration: none;
-    }
-    .notice {
-      background-color: #fffbeb;
-      border-left: 4px solid #f59e0b;
-      padding: 12px 16px;
-      margin: 24px 0;
-      border-radius: 4px;
-      font-size: 12px;
-      color: #92400e;
-    }
-    .footer {
-      background-color: #f8fafc;
-      padding: 24px 32px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
-      font-size: 11px;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-    .footer a {
-      color: #0d9488;
-      text-decoration: none;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <h1 class="brand-title">GUL FARO</h1>
-        <div class="brand-tagline">GCC Job Classifieds Marketplace</div>
-      </div>
-      <div class="content">
-        <h2 class="greeting">Hello ${name ? name.split(' ')[0] : 'there'},</h2>
-        <p class="text">
-          We received a request to reset the password associated with your Gul Faro account.
-        </p>
-        <p class="text">
-          To choose a new secure password, click the button below:
-        </p>
-        
-        <div class="btn-container">
-          <a href="${resetLink}" class="btn" target="_blank" rel="noopener noreferrer">
-            Reset Your Password
-          </a>
-        </div>
-
-        <div class="notice">
-          <strong>Security Notice:</strong> This password reset link is strictly valid for <strong>${expirationText}</strong> and can only be used once.
-        </div>
-
-        <p class="text" style="font-size: 12px; color: #64748b;">
-          If the button above does not work, copy and paste this secure link directly into your browser:
-        </p>
-        <div class="link-fallback">
-          <a href="${resetLink}" target="_blank" rel="noopener noreferrer">${resetLink}</a>
-        </div>
-
-        <p class="text" style="font-size: 12px; color: #64748b; margin-top: 24px;">
-          If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account is secure.
-        </p>
-      </div>
-
-      <div class="footer">
-        <p style="margin: 0 0 6px 0;">
-          Gul Faro Official Security Gateway · Connecting Talent Across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman
-        </p>
-        <p style="margin: 0;">
-          Need help? Contact <a href="mailto:admingulfaro@gmail.com">admingulfaro@gmail.com</a>
-        </p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-// Main function to send real password reset email
-export async function sendRealPasswordResetEmail(
-  email: string,
-  appUrl: string,
-  clientIp = 'unknown'
-): Promise<{ success: boolean; message: string; previewUrl?: string; resetUrl?: string }> {
-  const cleanEmail = email.trim().toLowerCase();
-
-  // Rate limit: max 5 requests per 15 mins per IP or email
-  const rateLimitKey = `pw_reset:${clientIp}:${cleanEmail}`;
-  if (!checkRateLimit(rateLimitKey)) {
-    return {
-      success: false,
-      message: 'Too many password reset requests. Please wait 15 minutes before trying again.'
-    };
-  }
-
-  // Find user in server database
-  const user = await findUserByEmail(cleanEmail);
-
-  // If user is not found, clearly inform the user so they can correct typos or create an account
-  if (!user) {
-    return {
-      success: false,
-      message: `No Gulfaro account found with email "${cleanEmail}". Please check your email address or create an account.`
-    };
-  }
-
-  // Generate cryptographically secure 64-char hex token
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
-
-  // Store token in server database
-  const tokens = await getResetTokens();
-  // Invalidate any existing unused tokens for this email
-  const updatedTokens = tokens.map(t => {
-    if (t.email.toLowerCase() === cleanEmail && !t.used) {
-      return { ...t, used: true, usedAt: Date.now() };
-    }
-    return t;
-  });
-
-  updatedTokens.push({
-    tokenHash,
-    token: rawToken,
-    email: cleanEmail,
-    expiresAt,
-    used: false,
-    createdAt: Date.now(),
-    ip: clientIp
-  });
-  await saveResetTokens(updatedTokens);
-
-  // Construct absolute reset URL
-  const resetLink = `${appUrl.replace(/\/+$/, '')}/reset-password?token=${rawToken}&email=${encodeURIComponent(cleanEmail)}`;
-
-  // Send real email
-  const emailHtml = generatePasswordResetEmailHtml(user.name, resetLink, '1 hour');
-  const fromAddress = getSenderEmail('security');
-
-  // 1. Resend API Delivery (Primary Production Delivery Engine)
-  const resend = getResendClient();
-  if (resend) {
-    try {
-      console.log(`[Gulfaro Resend] Dispatching password reset email to: ${cleanEmail} from: ${fromAddress}`);
-      const { data, error } = await resend.emails.send({
-        from: fromAddress,
-        to: cleanEmail,
-        subject: 'Reset Your Gulfaro Password',
-        html: emailHtml,
-        replyTo: process.env.RESEND_FROM_EMAIL || 'admingulfaro@gmail.com'
-      });
-
-      if (error) {
-        console.error('[Gulfaro Resend] Resend API provider error:', error);
-        const configuredKey = process.env.RESEND_API_KEY || '';
-        const isNotResendKey = !configuredKey.startsWith('re_');
-        const hint = isNotResendKey
-          ? ` (Notice: Resend API keys must start with "re_" from resend.com/api-keys. Your current key starts with "${configuredKey.slice(0, 3)}...", which is not a Resend key).`
-          : '';
-        await appendEmailLogEntry({
-          recipient: cleanEmail,
-          subject: 'Reset Your Gulfaro Password',
-          category: 'password_reset',
-          provider: 'Resend',
-          status: 'failed',
-          error: error.message
-        });
-        return {
-          success: false,
-          message: `Email provider rejected request: ${error.message}${hint}`,
-          resetUrl: resetLink
-        };
-      }
-
-      console.log(`[Gulfaro Resend] Password reset email accepted by Resend! Message ID: ${data?.id}`);
-      await appendEmailLogEntry({
-        recipient: cleanEmail,
-        subject: 'Reset Your Gulfaro Password',
-        category: 'password_reset',
-        provider: 'Resend',
-        status: 'sent',
-        messageId: data?.id
-      });
-      return {
-        success: true,
-        message: 'A secure password reset link has been dispatched to your email address. Please check your inbox and spam folder.',
-        resetUrl: resetLink
-      };
-    } catch (err: any) {
-      console.error('[Gulfaro Resend] Connection error sending reset email:', err);
-      await appendEmailLogEntry({
-        recipient: cleanEmail,
-        subject: 'Reset Your Gulfaro Password',
-        category: 'password_reset',
-        provider: 'Resend',
-        status: 'failed',
-        error: err.message
-      });
-      return {
-        success: false,
-        message: err.message || 'Failed to communicate with Resend email delivery service.',
-        resetUrl: resetLink
-      };
-    }
-  }
-
-  // 2. Custom SMTP fallback if SMTP_HOST and SMTP_USER are defined
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      const { transporter } = await getEmailTransporter();
-      await transporter.sendMail({
-        from: fromAddress,
-        to: cleanEmail,
-        subject: 'Reset Your Gulfaro Password',
-        html: emailHtml
-      });
-      return {
-        success: true,
-        message: 'A secure password reset link has been dispatched to your email address. Please check your inbox and spam folder.',
-        resetUrl: resetLink
-      };
-    } catch (smtpErr: any) {
-      console.error('[Gulfaro SMTP] SMTP delivery error:', smtpErr);
-      return {
-        success: false,
-        message: smtpErr.message || 'Failed to send password reset email via SMTP server.',
-        resetUrl: resetLink
-      };
-    }
-  }
-
-  // 3. No production provider configured
-  console.warn('[Gulfaro Email] Resend API key (RESEND_API_KEY) is pending configuration.');
-  return {
-    success: false,
-    message: 'Email delivery provider is pending configuration. Please set RESEND_API_KEY (starts with "re_") in your environment variables.',
-    resetUrl: resetLink
-  };
-}
-
-// Verify a reset token
-export async function verifyResetTokenRecord(
-  token: string,
-  rawEmail?: string
-): Promise<{ valid: boolean; email?: string; error?: string }> {
-  if (!token) {
-    return { valid: false, error: 'Invalid or missing password reset link. Please request a new one.' };
-  }
-
-  const cleanEmail = rawEmail ? rawEmail.trim().toLowerCase() : undefined;
-  const tokenHash = hashToken(token);
-  const tokens = await getResetTokens();
-
-  const record = tokens.find(t => t.tokenHash === tokenHash || (t.token && t.token === token));
-
-  if (!record) {
-    return { valid: false, error: 'Invalid or expired password reset link. Please request a new one.' };
-  }
-
-  if (cleanEmail && record.email.toLowerCase() !== cleanEmail) {
-    return { valid: false, error: 'Reset link does not match the requested email address.' };
-  }
-
-  if (record.used) {
-    return { valid: false, error: 'This password reset link has already been used. Please request a new one.' };
-  }
-
-  if (Date.now() > record.expiresAt) {
-    return { valid: false, error: 'This password reset link has expired. Please request a new one.' };
-  }
-
-  return { valid: true, email: record.email };
-}
-
-// Complete the password reset
-export async function completePasswordReset(
-  token: string,
-  rawEmail: string | undefined,
-  newPassword: string
-): Promise<{ success: boolean; error?: string }> {
-  const verification = await verifyResetTokenRecord(token, rawEmail);
-  if (!verification.valid) {
-    return { success: false, error: verification.error };
-  }
-
-  // Validate password rules
-  if (!newPassword || newPassword.length < 8) {
-    return { success: false, error: 'Password must be at least 8 characters long.' };
-  }
-
-  if (!/\d/.test(newPassword)) {
-    return { success: false, error: 'Password must contain at least 1 number.' };
-  }
-
-  const cleanEmail = (rawEmail || verification.email)!.trim().toLowerCase();
-  const tokenHash = hashToken(token);
-
-  // 1. Mark token as used immediately
-  const tokens = await getResetTokens();
-  const updatedTokens = tokens.map(t => {
-    if (t.tokenHash === tokenHash || (t.token && t.token === token)) {
-      return { ...t, used: true, usedAt: Date.now() };
-    }
-    return t;
-  });
-  await saveResetTokens(updatedTokens);
-
-  // 2. Hash new password and update user record
-  const user = await findUserByEmail(cleanEmail);
-
-  if (!user) {
-    return { success: false, error: 'Account not found. Please contact support.' };
-  }
-
-  const newHash = hashPassword(newPassword);
-  user.password = undefined; // Remove plain text
-  user.passwordHash = newHash;
-  await saveUser(user);
-
-  return { success: true };
-}
-
-// Generate HTML email for Employer Verification
-export function generateEmployerVerificationEmailHtml(
-  name: string,
-  companyName: string,
-  code: string,
-  verifyLink: string
-): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verify Your Employer Corporate Email - Gul Faro</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #f1f5f9;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      color: #1e293b;
-      line-height: 1.6;
-    }
-    .wrapper {
-      width: 100%;
-      background-color: #f1f5f9;
-      padding: 40px 16px;
-    }
-    .container {
-      max-width: 580px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-      border: 1px solid #e2e8f0;
-    }
-    .header {
-      background: linear-gradient(135deg, #091e3a 0%, #061528 100%);
-      padding: 32px 32px 28px;
-      text-align: center;
-      border-bottom: 3px solid #0d9488;
-    }
-    .brand-title {
-      color: #ffffff;
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: 2px;
-      margin: 0 0 4px 0;
-    }
-    .brand-tagline {
-      color: #5eead4;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      font-weight: 600;
-    }
-    .badge-bar {
-      display: inline-block;
-      margin-top: 14px;
-      background: rgba(13, 148, 136, 0.2);
-      border: 1px solid #0d9488;
-      border-radius: 20px;
-      padding: 4px 14px;
-      font-size: 11px;
-      color: #2dd4bf;
-      font-weight: 700;
-    }
-    .content {
-      padding: 36px 32px;
-    }
-    .greeting {
-      font-size: 18px;
-      font-weight: 700;
-      color: #0f172a;
-      margin-top: 0;
-      margin-bottom: 14px;
-    }
-    .text {
-      font-size: 14px;
-      color: #334155;
-      margin-bottom: 18px;
-      line-height: 1.6;
-    }
-    .code-box {
-      background-color: #f0fdf4;
-      border: 2px dashed #0d9488;
-      border-radius: 10px;
-      padding: 22px 16px;
-      text-align: center;
-      margin: 26px 0;
-    }
-    .code-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      font-weight: 800;
-      color: #0f766e;
-      letter-spacing: 1.2px;
-      margin-bottom: 8px;
-    }
-    .code-digits {
-      font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
-      font-size: 34px;
-      font-weight: 800;
-      color: #0f172a;
-      letter-spacing: 8px;
-    }
-    .code-meta {
-      font-size: 11px;
-      color: #64748b;
-      margin-top: 8px;
-    }
-    .btn-container {
-      text-align: center;
-      margin: 28px 0;
-    }
-    .btn {
-      display: inline-block;
-      background-color: #0d9488;
-      color: #ffffff !important;
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 14px;
-      padding: 13px 32px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(13, 148, 136, 0.3);
-    }
-    .benefits-box {
-      background-color: #f8fafc;
-      border-radius: 8px;
-      border: 1px solid #e2e8f0;
-      padding: 18px;
-      margin: 24px 0;
-      font-size: 12px;
-      color: #334155;
-    }
-    .benefits-title {
-      font-weight: 700;
-      color: #0f172a;
-      margin-bottom: 8px;
-      display: block;
-    }
-    .footer {
-      background-color: #f8fafc;
-      padding: 24px 32px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
-      font-size: 11px;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <h1 class="brand-title">GUL FARO</h1>
-        <div class="brand-tagline">GCC Job Classifieds Marketplace</div>
-        <div class="badge-bar">✓ Official Employer Verification Gateway</div>
-      </div>
-      <div class="content">
-        <h2 class="greeting">Hello ${name || 'Hiring Manager'},</h2>
-        <p class="text">
-          Thank you for managing recruitment on Gulfaro for <strong>${companyName || 'your company'}</strong>.
-        </p>
-        <p class="text">
-          To ensure employer legitimacy, protect expatriate candidates, and award your company the official <strong>Verified Employer</strong> trust badge, please confirm ownership of this corporate email address.
-        </p>
-        
-        <div class="code-box">
-          <div class="code-label">Your 6-Digit Employer Verification Code</div>
-          <div class="code-digits">${code}</div>
-          <div class="code-meta">Valid for 15 minutes · Enter this code in your Gulfaro Dashboard</div>
-        </div>
-
-        <div class="btn-container">
-          <a href="${verifyLink}" class="btn" target="_blank" rel="noopener noreferrer">
-            Instant 1-Click Verification
-          </a>
-        </div>
-
-        <div class="benefits-box">
-          <span class="benefits-title">Why Verify Your Corporate Email?</span>
-          <div>• Displays the distinctive <strong>Verified Employer</strong> badge on all your job vacancies.</div>
-          <div>• Ranks your classifieds higher in GCC search results across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain & Oman.</div>
-          <div>• Attracts up to 3x more qualified candidate CVs and direct WhatsApp inquiries.</div>
-        </div>
-
-        <p class="text" style="font-size: 12px; color: #64748b;">
-          If you did not request this verification, please contact our security team at <a href="mailto:admingulfaro@gmail.com" style="color: #0d9488;">admingulfaro@gmail.com</a>.
-        </p>
-      </div>
-
-      <div class="footer">
-        <p style="margin: 0 0 6px 0;">
-          Gul Faro Official Security Gateway · Riyadh · Dubai · Doha · Kuwait City · Manama · Muscat
-        </p>
-        <p style="margin: 0;">
-          Connecting verified employers with genuine talent across the Arabian Gulf.
-        </p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-// Send Employer Email Verification (Disabled: registered employers receive automatic Verified Employer status)
-export async function sendEmployerEmailVerification(
-  _email: string,
-  _appUrl: string,
-  _clientIp = 'unknown'
-): Promise<{ success: boolean; message: string; previewUrl?: string; code?: string }> {
-  return {
-    success: false,
-    message: 'Employer email verification is no longer required. Registered employer accounts automatically receive the Verified Employer badge.'
-  };
-}
-
-// Complete Employer Email Verification
-export async function verifyEmployerEmailRecord(
-  email: string,
-  codeOrToken: string
-): Promise<{ success: boolean; error?: string; user?: UserRecord; updatedJobsCount?: number }> {
-  if (!email || !codeOrToken) {
-    return { success: false, error: 'Email and verification code/link are required.' };
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanCode = codeOrToken.trim();
-
-  const codes = await getVerificationCodes();
-  const matchIndex = codes.findIndex(c => 
-    c.email.toLowerCase() === cleanEmail && 
-    (c.code === cleanCode || c.token === cleanCode)
-  );
-
-  if (matchIndex === -1) {
-    return { success: false, error: 'Invalid verification code or link. Please check the code or request a new one.' };
-  }
-
-  const record = codes[matchIndex];
-  if (record.used) {
-    return { success: false, error: 'This verification code has already been used.' };
-  }
-
-  if (Date.now() > record.expiresAt) {
-    return { success: false, error: 'This verification code has expired (15 minute validity). Please request a new code.' };
-  }
-
-  // Mark code as used
-  codes[matchIndex].used = true;
-  codes[matchIndex].usedAt = Date.now();
-  await saveVerificationCodes(codes);
-
-  // Update user in database
-  const user = await findUserByEmail(cleanEmail);
-  if (!user) {
-    return { success: false, error: 'Account associated with this email could not be found.' };
-  }
-
-  const nowIso = new Date().toISOString();
-  user.emailVerified = true;
-  user.emailVerifiedAt = nowIso;
-  await saveUser(user);
-
-  // Update all jobs belonging to this employer
-  const updatedCount = await syncEmployerVerifiedOnJobs(user.id, cleanEmail, true);
-
-  return {
-    success: true,
-    user,
-    updatedJobsCount: updatedCount
-  };
-}
-
-// =========================================================================
-// 5-Digit Access Key Recovery System (Bcrypt + Rate Limiting + 10-Min JWT)
-// =========================================================================
-
-const JWT_RESET_SECRET = process.env.JWT_SECRET || 'gulfaro-access-key-jwt-secret-secure-2026';
 
 export function issueUserSessionToken(user: Pick<UserRecord, 'id' | 'email' | 'role'>, rememberMe = false): string {
   return jwt.sign(
@@ -1002,7 +251,7 @@ export function issueUserSessionToken(user: Pick<UserRecord, 'id' | 'email' | 'r
       role: user.role,
       purpose: 'gulfaro-user-session'
     },
-    JWT_RESET_SECRET,
+    JWT_SESSION_SECRET,
     { expiresIn: rememberMe ? '30d' : '24h' }
   );
 }
@@ -1011,7 +260,7 @@ export function verifyUserSessionToken(
   token: string
 ): { valid: boolean; userId?: string; email?: string; role?: string; iatMs?: number } {
   try {
-    const decoded = jwt.verify(token, JWT_RESET_SECRET) as any;
+    const decoded = jwt.verify(token, JWT_SESSION_SECRET) as any;
     if (!decoded || decoded.purpose !== 'gulfaro-user-session' || !decoded.sub) {
       return { valid: false };
     }
@@ -1027,227 +276,124 @@ export function verifyUserSessionToken(
   }
 }
 
-/**
- * Hash a 5-digit Access Key using bcrypt with salt rounds of 10.
- * Never stores plain-text access keys in the database.
- */
-export async function hashAccessKey(accessKey: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(accessKey, salt);
-}
+// =========================================================================
+// Hostinger SMTP Transporter & Unified Mail Delivery
+// =========================================================================
 
-/**
- * Compare a candidate 5-digit Access Key against a bcrypt hash.
- */
-export async function compareAccessKey(accessKey: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(accessKey, hash);
-}
+let cachedTransporter: Transporter | null = null;
+let cachedTransporterSignature = '';
 
-/**
- * Generate a short-lived 10-minute JWT specifically for password reset.
- */
-export function generateResetJwt(user: UserRecord): string {
-  return jwt.sign(
-    {
-      sub: user.id,
-      email: user.email.toLowerCase(),
-      purpose: 'access-key-password-reset'
+export async function getEmailTransporter(): Promise<{ transporter: Transporter; providerName: string }> {
+  const smtpHost = process.env.SMTP_HOST?.trim();
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim();
+  const smtpPort = Number(process.env.SMTP_PORT) || 465;
+  const smtpSecureEnv = (process.env.SMTP_SECURE || '').trim().toLowerCase();
+  const secure =
+    smtpSecureEnv === 'true' ? true : smtpSecureEnv === 'false' ? false : smtpPort === 465;
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    throw new Error('Hostinger SMTP configuration missing (SMTP_HOST, SMTP_USER, SMTP_PASS).');
+  }
+
+  const signature = `${smtpHost}:${smtpPort}:${secure}:${smtpUser}`;
+  if (cachedTransporter && cachedTransporterSignature === signature) {
+    return { transporter: cachedTransporter, providerName: `SMTP (${smtpHost})` };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass
     },
-    JWT_RESET_SECRET,
-    { expiresIn: '10m' }
-  );
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000
+  });
+
+  cachedTransporter = transporter;
+  cachedTransporterSignature = signature;
+  return { transporter, providerName: `SMTP (${smtpHost})` };
 }
 
-/**
- * Verify a password reset JWT session token.
- */
-export function verifyResetJwt(token: string): { valid: boolean; email?: string; userId?: string; error?: string } {
+export async function verifySmtpConnection(): Promise<{ ok: boolean; provider?: string; error?: string }> {
+  if (!isSmtpConfigured()) {
+    return { ok: false, error: 'SMTP environment variables are not configured.' };
+  }
   try {
-    const decoded = jwt.verify(token, JWT_RESET_SECRET) as any;
-    if (!decoded || decoded.purpose !== 'access-key-password-reset' || !decoded.email) {
-      return { valid: false, error: 'Invalid password reset session token.' };
-    }
-    return { valid: true, email: decoded.email, userId: decoded.sub };
+    const { transporter, providerName } = await getEmailTransporter();
+    await transporter.verify();
+    return { ok: true, provider: providerName };
   } catch (err: any) {
-    if (err.name === 'TokenExpiredError') {
-      return { valid: false, error: 'Password reset session has expired (10-minute limit). Please verify your Access Key again.' };
-    }
-    return { valid: false, error: 'Invalid or expired password reset session token.' };
+    return { ok: false, error: err?.message || 'SMTP verification failed' };
   }
 }
 
-/**
- * Verify an Access Key against the database:
- * - Checks account lockout (3 failed attempts = 15 minutes lock)
- * - Hashes/compares key with bcrypt
- * - Generic error "Invalid Email or Access Key." on any mismatch to prevent enumeration
- * - Generates 10-minute JWT upon success
- */
-export async function verifyAccessKeyAndGenerateToken(
-  rawEmail: string,
-  rawAccessKey: string,
-  clientIp = 'unknown'
-): Promise<{ success: boolean; token?: string; error?: string; status: number }> {
-  const cleanEmail = (rawEmail || '').trim().toLowerCase();
-  const cleanKey = (rawAccessKey || '').toString().trim();
-
-  // Validate basic format (must be 5 digits and valid email)
-  if (!cleanEmail || !cleanKey || !/^\d{5}$/.test(cleanKey)) {
-    return {
-      success: false,
-      error: 'Invalid Email or Access Key.',
-      status: 400
-    };
-  }
-
-  const user = await findUserByEmail(cleanEmail);
-
-  // If user does not exist, perform dummy comparison to prevent timing enumeration
-  if (!user) {
-    await bcrypt.compare('00000', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
-    return {
-      success: false,
-      error: 'Invalid Email or Access Key.',
-      status: 400
-    };
-  }
-
-  const now = Date.now();
-
-  // Check if account is currently locked out
-  if (user.lockoutUntil && user.lockoutUntil > now) {
-    const remainingMinutes = Math.ceil((user.lockoutUntil - now) / (60 * 1000));
-    return {
-      success: false,
-      error: `Account is temporarily locked due to 3 failed attempts. Please try again after ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}.`,
-      status: 429
-    };
-  }
-
-  // If previous lockout period has passed, reset counter
-  if (user.lockoutUntil && user.lockoutUntil <= now) {
-    user.failedAttempts = 0;
-    user.lockoutUntil = null;
-  }
-
-  // Compare key against bcrypt hash (fallback to default 12345 for legacy accounts)
-  let isMatch = false;
-  if (user.accessKeyHash) {
-    isMatch = await compareAccessKey(cleanKey, user.accessKeyHash);
-  } else {
-    isMatch = (cleanKey === '12345');
-    if (isMatch) {
-      user.accessKeyHash = await hashAccessKey('12345');
-    }
-  }
-
-  if (!isMatch) {
-    const failedCount = (user.failedAttempts || 0) + 1;
-    user.failedAttempts = failedCount;
-
-    if (failedCount >= 3) {
-      user.lockoutUntil = now + 15 * 60 * 1000; // 15-minute security lockout
-      await saveUser(user);
-      return {
-        success: false,
-        error: 'Too many failed attempts. Account has been locked for 15 minutes for your security.',
-        status: 429
-      };
-    }
-
-    await saveUser(user);
-    // Generic error to prevent enumeration
-    return {
-      success: false,
-      error: 'Invalid Email or Access Key.',
-      status: 400
-    };
-  }
-
-  // Success! Clear failed attempts and lockouts
-  user.failedAttempts = 0;
-  user.lockoutUntil = null;
-  await saveUser(user);
-
-  // Generate 10-minute JWT session token
-  const token = generateResetJwt(user);
-
-  return {
-    success: true,
-    token,
-    status: 200
-  };
-}
-
-/**
- * Reset password using the verified 10-minute JWT token.
- */
-export async function resetPasswordWithJwt(
-  resetToken: string,
-  newPassword: string
-): Promise<{ success: boolean; error?: string; status: number }> {
-  // Verify JWT
-  const decoded = verifyResetJwt(resetToken);
-  if (!decoded.valid || !decoded.email) {
-    return {
-      success: false,
-      error: decoded.error || 'Invalid or expired password reset session. Please verify your Access Key again.',
-      status: 401
-    };
-  }
-
-  // Validate password rules (min 8 chars, 1 uppercase, 1 number)
-  if (!newPassword || newPassword.length < 8) {
-    return { success: false, error: 'Password must be at least 8 characters long.', status: 400 };
-  }
-  if (!/[A-Z]/.test(newPassword)) {
-    return { success: false, error: 'Password must contain at least one uppercase letter (A-Z).', status: 400 };
-  }
-  if (!/\d/.test(newPassword)) {
-    return { success: false, error: 'Password must contain at least one number (0-9).', status: 400 };
-  }
-
-  const user = await findUserByEmail(decoded.email);
-
-  if (!user) {
-    return { success: false, error: 'Account could not be found.', status: 404 };
-  }
-
-  // Hash new password using PBKDF2 salt+hash (never store plaintext)
-  const newHash = hashPassword(newPassword);
-  user.password = undefined;
-  user.passwordHash = newHash;
-  user.failedAttempts = 0;
-  user.lockoutUntil = null;
-  await saveUser(user);
-
-  return {
-    success: true,
-    status: 200
-  };
-}
-
-/**
- * Send a transactional or announcement email via configured Resend/SMTP provider
- * and persist the delivery outcome to email_logs.
- */
-export async function sendPlatformEmail(opts: {
+export async function deliverMail(opts: {
   to: string;
   subject: string;
   html: string;
+  text?: string;
   category: 'verification' | 'password_reset' | 'welcome' | 'announcement' | 'security_alert' | 'admin_reset' | 'system';
   triggeredBy?: string;
 }): Promise<{ success: boolean; messageId?: string; provider?: string; error?: string }> {
   const cleanTo = opts.to.trim().toLowerCase();
-  const settings = await getSiteSettings();
-  const replyTo = settings.emailConfig.replyToEmail || 'admingulfaro@gmail.com';
-  let fromAddress = getSenderEmail('security');
+  const settings = await getSiteSettings().catch(() => null);
 
-  if (settings.emailConfig.senderEmail && !/@(gmail\.com|yahoo\.com|outlook\.com|hotmail\.com)$/i.test(settings.emailConfig.senderEmail)) {
-    const senderName = settings.emailConfig.senderName || 'Gulfaro Official';
-    fromAddress = `${senderName} <${settings.emailConfig.senderEmail}>`;
+  let fromAddress = getSenderEmail();
+  const configuredSenderEmail = settings?.emailConfig?.senderEmail?.trim();
+  const configuredSenderName = settings?.emailConfig?.senderName?.trim();
+  if (
+    configuredSenderEmail &&
+    !/@(gmail\.com|yahoo\.com|outlook\.com|hotmail\.com|gulfaro\.com)$/i.test(configuredSenderEmail)
+  ) {
+    fromAddress = `${configuredSenderName || OFFICIAL_SENDER_NAME} <${configuredSenderEmail}>`;
   }
 
+  const replyTo = getReplyToEmail(settings?.emailConfig?.replyToEmail);
+
+  // 1. Primary Production Transport: Hostinger SMTP (info@gulfaro.net)
+  if (isSmtpConfigured()) {
+    try {
+      const { transporter, providerName } = await getEmailTransporter();
+      const info = await transporter.sendMail({
+        from: fromAddress,
+        to: cleanTo,
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+        replyTo
+      });
+      await appendEmailLogEntry({
+        recipient: cleanTo,
+        subject: opts.subject,
+        category: opts.category,
+        provider: providerName,
+        status: 'sent',
+        messageId: info.messageId,
+        triggeredBy: opts.triggeredBy
+      });
+      return { success: true, provider: providerName, messageId: info.messageId };
+    } catch (smtpErr: any) {
+      const errMsg = smtpErr?.message || 'Hostinger SMTP delivery failed';
+      console.error(`[Gulfaro SMTP] Delivery error for ${opts.category} to ${cleanTo}:`, errMsg);
+      await appendEmailLogEntry({
+        recipient: cleanTo,
+        subject: opts.subject,
+        category: opts.category,
+        provider: `SMTP (${process.env.SMTP_HOST})`,
+        status: 'failed',
+        error: errMsg,
+        triggeredBy: opts.triggeredBy
+      });
+      return { success: false, provider: `SMTP (${process.env.SMTP_HOST})`, error: errMsg };
+    }
+  }
+
+  // 2. Legacy Fallback: Resend API if explicitly configured without SMTP
   const resend = getResendClient();
   if (resend) {
     try {
@@ -1256,6 +402,7 @@ export async function sendPlatformEmail(opts: {
         to: cleanTo,
         subject: opts.subject,
         html: opts.html,
+        text: opts.text,
         replyTo
       });
       if (error) {
@@ -1294,44 +441,9 @@ export async function sendPlatformEmail(opts: {
     }
   }
 
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      const { transporter, providerName } = await getEmailTransporter();
-      const info = await transporter.sendMail({
-        from: fromAddress,
-        to: cleanTo,
-        subject: opts.subject,
-        html: opts.html,
-        replyTo
-      });
-      await appendEmailLogEntry({
-        recipient: cleanTo,
-        subject: opts.subject,
-        category: opts.category,
-        provider: providerName,
-        status: 'sent',
-        messageId: info.messageId,
-        triggeredBy: opts.triggeredBy
-      });
-      return { success: true, provider: providerName, messageId: info.messageId };
-    } catch (smtpErr: any) {
-      await appendEmailLogEntry({
-        recipient: cleanTo,
-        subject: opts.subject,
-        category: opts.category,
-        provider: 'SMTP',
-        status: 'failed',
-        error: smtpErr.message,
-        triggeredBy: opts.triggeredBy
-      });
-      return { success: false, provider: 'SMTP', error: smtpErr.message };
-    }
-  }
-
-  const msg = 'Email delivery provider is pending configuration (RESEND_API_KEY / SMTP not configured).';
+  // 3. No Email Provider Configured (Fail explicitly, never spoof success)
+  const msg = 'Email delivery provider is not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS for info@gulfaro.net).';
+  console.log('[Gulfaro Email]', msg);
   await appendEmailLogEntry({
     recipient: cleanTo,
     subject: opts.subject,
@@ -1344,4 +456,563 @@ export async function sendPlatformEmail(opts: {
   return { success: false, provider: 'None', error: msg };
 }
 
+// =========================================================================
+// Responsive Branded Email Templates (HTML + Plain Text)
+// =========================================================================
 
+function buildBrandedEmailShell(params: {
+  title: string;
+  preheader: string;
+  bodyHtml: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeEmailHtml(params.title)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeEmailHtml(params.preheader)}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f1f5f9;padding:36px 14px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:580px;background-color:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(15,23,42,0.06);">
+          <tr>
+            <td style="background-color:#090d16;padding:28px 32px;text-align:center;border-bottom:3px solid #0d9488;">
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:1.5px;">GULFARO</h1>
+              <p style="margin:6px 0 0 0;color:#5eead4;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;">GCC Job Classifieds Marketplace</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px 32px;">
+              ${params.bodyHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f8fafc;padding:22px 32px;text-align:center;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;line-height:1.6;">
+              <p style="margin:0 0 4px 0;font-weight:600;color:#475569;">Gulfaro · Official GCC Job Marketplace</p>
+              <p style="margin:0 0 6px 0;">Saudi Arabia · UAE · Qatar · Kuwait · Bahrain · Oman</p>
+              <p style="margin:0;">Need assistance? Contact <a href="mailto:info@gulfaro.net" style="color:#0d9488;text-decoration:none;font-weight:600;">info@gulfaro.net</a></p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+export function generateAccountVerificationEmailHtml(
+  name: string,
+  verifyLink: string,
+  expirationText = '24 hours'
+): string {
+  const safeFirst = escapeEmailHtml((name || '').trim().split(/\s+/)[0] || 'there');
+  const safeLink = escapeEmailHtml(verifyLink);
+  return buildBrandedEmailShell({
+    title: 'Verify Your Gulfaro Account',
+    preheader: 'Click Verify My Account to activate your Gulfaro account.',
+    bodyHtml: `
+      <h2 style="margin:0 0 16px 0;font-size:19px;font-weight:700;color:#0f172a;">Hello ${safeFirst},</h2>
+      <p style="margin:0 0 16px 0;font-size:14px;line-height:1.65;color:#334155;">
+        Thank you for registering with <strong>Gulfaro</strong>. Before you can sign in and access your account, please confirm that this email address belongs to you.
+      </p>
+      <p style="margin:0 0 24px 0;font-size:14px;line-height:1.65;color:#334155;">
+        Click the button below to verify your email address and activate your Gulfaro account:
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:#0d9488;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:14px 34px;border-radius:10px;">
+          Verify My Account
+        </a>
+      </div>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;margin:22px 0;border-radius:4px;font-size:12px;line-height:1.5;color:#92400e;">
+        <strong>Expiration Notice:</strong> This verification link will expire in <strong>${escapeEmailHtml(expirationText)}</strong> and can only be used once.
+      </div>
+      <p style="margin:20px 0 8px 0;font-size:12px;color:#64748b;">
+        If the button above does not work, copy and paste this link directly into your browser:
+      </p>
+      <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:12px;word-break:break-all;">
+        <a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color:#0d9488;text-decoration:none;">${safeLink}</a>
+      </div>
+      <p style="margin:24px 0 0 0;font-size:12px;line-height:1.5;color:#64748b;">
+        If you did not create a Gulfaro account, you can safely ignore this email.
+      </p>
+    `
+  });
+}
+
+export function generateAccountVerificationEmailText(
+  name: string,
+  verifyLink: string,
+  expirationText = '24 hours'
+): string {
+  const first = (name || '').trim().split(/\s+/)[0] || 'there';
+  return [
+    `Hello ${first},`,
+    '',
+    'Thank you for registering with Gulfaro.',
+    'Please verify your email address by visiting the link below:',
+    '',
+    verifyLink,
+    '',
+    `This verification link expires in ${expirationText} and can only be used once.`,
+    'If you did not create a Gulfaro account, you can safely ignore this message.',
+    '',
+    'Best regards,',
+    'Gulfaro Team',
+    'info@gulfaro.net'
+  ].join('\n');
+}
+
+export function generatePasswordResetEmailHtml(
+  name: string,
+  resetLink: string,
+  expirationText = '30 minutes'
+): string {
+  const safeFirst = escapeEmailHtml((name || '').trim().split(/\s+/)[0] || 'there');
+  const safeLink = escapeEmailHtml(resetLink);
+  return buildBrandedEmailShell({
+    title: 'Reset Your Gulfaro Password',
+    preheader: 'Use this link within 30 minutes to reset your Gulfaro password.',
+    bodyHtml: `
+      <h2 style="margin:0 0 16px 0;font-size:19px;font-weight:700;color:#0f172a;">Hello ${safeFirst},</h2>
+      <p style="margin:0 0 16px 0;font-size:14px;line-height:1.65;color:#334155;">
+        We received a request to reset the password for your <strong>Gulfaro</strong> account.
+      </p>
+      <p style="margin:0 0 24px 0;font-size:14px;line-height:1.65;color:#334155;">
+        Click the button below to choose a new password:
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:#0d9488;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:14px 34px;border-radius:10px;">
+          Reset My Password
+        </a>
+      </div>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;margin:22px 0;border-radius:4px;font-size:12px;line-height:1.5;color:#92400e;">
+        <strong>Security Notice:</strong> This password reset link expires in <strong>${escapeEmailHtml(expirationText)}</strong> and can only be used once.
+      </div>
+      <p style="margin:20px 0 8px 0;font-size:12px;color:#64748b;">
+        If the button above does not work, copy and paste this secure URL into your browser:
+      </p>
+      <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:12px;word-break:break-all;">
+        <a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color:#0d9488;text-decoration:none;">${safeLink}</a>
+      </div>
+      <p style="margin:24px 0 0 0;font-size:12px;line-height:1.5;color:#64748b;">
+        If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account stays secure.
+      </p>
+    `
+  });
+}
+
+export function generatePasswordResetEmailText(
+  name: string,
+  resetLink: string,
+  expirationText = '30 minutes'
+): string {
+  const first = (name || '').trim().split(/\s+/)[0] || 'there';
+  return [
+    `Hello ${first},`,
+    '',
+    'We received a request to reset the password for your Gulfaro account.',
+    'Open the link below to set a new password:',
+    '',
+    resetLink,
+    '',
+    `This link expires in ${expirationText} and can only be used once.`,
+    'If you did not request a password reset, please ignore this email.',
+    '',
+    'Best regards,',
+    'Gulfaro Team',
+    'info@gulfaro.net'
+  ].join('\n');
+}
+
+export function generateWelcomeEmailHtml(name: string, appUrl?: string): string {
+  const safeName = escapeEmailHtml((name || '').trim() || 'Member');
+  const signInUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/` : 'https://www.gulfaro.net/';
+  return buildBrandedEmailShell({
+    title: 'Welcome to Gulfaro!',
+    preheader: 'Your Gulfaro account has been verified and activated.',
+    bodyHtml: `
+      <h2 style="margin:0 0 16px 0;font-size:19px;font-weight:700;color:#0f172a;">Welcome to Gulfaro, ${safeName}!</h2>
+      <p style="margin:0 0 16px 0;font-size:14px;line-height:1.65;color:#334155;">
+        Your email address has been verified and your <strong>Gulfaro</strong> account is now active.
+      </p>
+      <p style="margin:0 0 24px 0;font-size:14px;line-height:1.65;color:#334155;">
+        You can now sign in to explore direct job vacancies across Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, and Oman, manage your profile, or post verified job listings.
+      </p>
+      <div style="text-align:center;margin:26px 0;">
+        <a href="${escapeEmailHtml(signInUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:#0f172a;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;">
+          Go to Gulfaro
+        </a>
+      </div>
+      <p style="margin:24px 0 0 0;font-size:13px;line-height:1.7;color:#334155;">
+        Best regards,<br />
+        <strong>Gulfaro Team</strong><br />
+        <a href="mailto:info@gulfaro.net" style="color:#0d9488;text-decoration:none;">info@gulfaro.net</a>
+      </p>
+    `
+  });
+}
+
+export function generateWelcomeEmailText(name: string): string {
+  const safeName = (name || '').trim() || 'Member';
+  return [
+    `Welcome to Gulfaro, ${safeName}!`,
+    '',
+    'Your email address has been verified and your Gulfaro account is now active.',
+    'You can now sign in and use all features of the Gulfaro GCC Job Marketplace.',
+    '',
+    'Best regards,',
+    'Gulfaro Team',
+    'info@gulfaro.net'
+  ].join('\n');
+}
+
+// =========================================================================
+// Email Verification Workflow (24h SHA-256 Token Hash, Single-Use)
+// =========================================================================
+
+export async function issueEmailVerificationToken(
+  user: UserRecord,
+  appUrl: string,
+  clientIp = 'unknown'
+): Promise<{ sent: boolean; error?: string }> {
+  const cleanEmail = user.email.trim().toLowerCase();
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = Date.now() + EMAIL_VERIFICATION_TTL_MS;
+
+  await createEmailVerificationToken({
+    tokenHash,
+    userId: user.id,
+    email: cleanEmail,
+    expiresAt,
+    used: false,
+    createdAt: Date.now(),
+    ip: clientIp
+  });
+
+  const verifyLink = `${appUrl.replace(/\/+$/, '')}/verify-email?token=${encodeURIComponent(rawToken)}`;
+  const settings = await getSiteSettings().catch(() => null);
+  const subject = settings?.emailConfig?.verificationSubject?.trim() || 'Verify Your Gulfaro Account';
+
+  const result = await deliverMail({
+    to: cleanEmail,
+    subject,
+    html: generateAccountVerificationEmailHtml(user.name, verifyLink, '24 hours'),
+    text: generateAccountVerificationEmailText(user.name, verifyLink, '24 hours'),
+    category: 'verification'
+  });
+
+  return { sent: result.success, error: result.error };
+}
+
+export async function verifyEmailByToken(
+  rawToken: string,
+  appUrl?: string
+): Promise<{
+  success: boolean;
+  code?: 'INVALID_TOKEN' | 'TOKEN_ALREADY_USED' | 'TOKEN_EXPIRED' | 'USER_NOT_FOUND';
+  message?: string;
+  error?: string;
+}> {
+  if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length < 16) {
+    return {
+      success: false,
+      code: 'INVALID_TOKEN',
+      error: 'Invalid or missing verification token. Please check the link or request a new verification email.'
+    };
+  }
+
+  const tokenHash = hashToken(rawToken);
+  const outcome = await consumeEmailVerificationToken(tokenHash);
+
+  if (outcome.status === 'not_found' || !outcome.record) {
+    return {
+      success: false,
+      code: 'INVALID_TOKEN',
+      error: 'This verification link is invalid. Please request a new verification email.'
+    };
+  }
+
+  if (outcome.status === 'already_used') {
+    return {
+      success: false,
+      code: 'TOKEN_ALREADY_USED',
+      error: 'This verification link has already been used. If your account is already verified, please sign in.'
+    };
+  }
+
+  if (outcome.status === 'expired') {
+    return {
+      success: false,
+      code: 'TOKEN_EXPIRED',
+      error: 'This verification link has expired (24-hour validity). Please request a new verification email.'
+    };
+  }
+
+  const user =
+    (await findUserById(outcome.record.userId)) ||
+    (await findUserByEmail(outcome.record.email));
+
+  if (!user) {
+    return {
+      success: false,
+      code: 'USER_NOT_FOUND',
+      error: 'Account associated with this verification link could not be found.'
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  if (user.emailVerified !== true) {
+    user.emailVerified = true;
+    user.emailVerifiedAt = nowIso;
+    await saveUser(user);
+    if (user.role === 'employer') {
+      await syncEmployerVerifiedOnJobs(user.id, user.email, true);
+    }
+
+    const settings = await getSiteSettings().catch(() => null);
+    if (settings?.emailConfig?.welcomeEmailEnabled !== false) {
+      await deliverMail({
+        to: user.email,
+        subject: 'Welcome to Gulfaro!',
+        html: generateWelcomeEmailHtml(user.name, appUrl),
+        text: generateWelcomeEmailText(user.name),
+        category: 'welcome'
+      }).catch(err => {
+        console.warn('[Gulfaro Welcome Email] Non-fatal dispatch error:', err?.message || err);
+      });
+    }
+  }
+
+  return {
+    success: true,
+    message: 'Your email address has been verified! Your Gulfaro account is now active and ready to sign in.'
+  };
+}
+
+export async function resendVerificationEmail(
+  rawEmail: string,
+  appUrl: string,
+  clientIp = 'unknown'
+): Promise<{ success: boolean; status: number; message?: string; error?: string }> {
+  const cleanEmail = (rawEmail || '').trim().toLowerCase();
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return {
+      success: false,
+      status: 400,
+      error: 'Please enter a valid email address.'
+    };
+  }
+
+  const emailAllowed = await checkDbRateLimit(`resend_verify:email:${cleanEmail}`, 3, 15 * 60 * 1000);
+  const ipAllowed = await checkDbRateLimit(`resend_verify:ip:${clientIp}`, 10, 15 * 60 * 1000);
+  if (!emailAllowed || !ipAllowed) {
+    return {
+      success: false,
+      status: 429,
+      error: 'Too many verification email requests. Please wait 15 minutes before trying again.'
+    };
+  }
+
+  const user = await findUserByEmail(cleanEmail);
+  if (user && (user.status || 'active') === 'active' && user.emailVerified !== true) {
+    await issueEmailVerificationToken(user, appUrl, clientIp);
+  }
+
+  return {
+    success: true,
+    status: 200,
+    message: GENERIC_RESEND_VERIFICATION_MESSAGE
+  };
+}
+
+// =========================================================================
+// Forgot Password & Email Reset Workflow (30m SHA-256 Token Hash, Anti-Enumeration)
+// =========================================================================
+
+export async function sendRealPasswordResetEmail(
+  email: string,
+  appUrl: string,
+  clientIp = 'unknown',
+  opts?: { byAdmin?: boolean; triggeredBy?: string }
+): Promise<{ success: boolean; status?: number; message: string }> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return {
+      success: false,
+      status: 400,
+      message: 'Please enter a valid email address.'
+    };
+  }
+
+  if (!opts?.byAdmin) {
+    const emailAllowed = await checkDbRateLimit(`pw_reset:email:${cleanEmail}`, 3, 15 * 60 * 1000);
+    const ipAllowed = await checkDbRateLimit(`pw_reset:ip:${clientIp}`, 10, 15 * 60 * 1000);
+    if (!emailAllowed || !ipAllowed) {
+      return {
+        success: false,
+        status: 429,
+        message: 'Too many password reset requests. Please wait 15 minutes before trying again.'
+      };
+    }
+  }
+
+  const user = await findUserByEmail(cleanEmail);
+  if (!user || (user.status || 'active') !== 'active' || (!opts?.byAdmin && user.emailVerified !== true)) {
+    if (opts?.byAdmin) {
+      return {
+        success: false,
+        status: 404,
+        message: 'Active user account not found for password reset.'
+      };
+    }
+    // Non-enumerating response: identical regardless of account existence or verification state
+    return {
+      success: true,
+      status: 200,
+      message: GENERIC_FORGOT_PASSWORD_MESSAGE
+    };
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = Date.now() + PASSWORD_RESET_TTL_MS;
+
+  await createPasswordResetToken({
+    tokenHash,
+    userId: user.id,
+    email: cleanEmail,
+    expiresAt,
+    used: false,
+    createdAt: Date.now(),
+    ip: clientIp
+  });
+
+  const resetLink = `${appUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  const settings = await getSiteSettings().catch(() => null);
+  const subject = settings?.emailConfig?.resetSubject?.trim() || 'Reset Your Gulfaro Password';
+
+  const delivery = await deliverMail({
+    to: cleanEmail,
+    subject,
+    html: generatePasswordResetEmailHtml(user.name, resetLink, '30 minutes'),
+    text: generatePasswordResetEmailText(user.name, resetLink, '30 minutes'),
+    category: opts?.byAdmin ? 'admin_reset' : 'password_reset',
+    triggeredBy: opts?.triggeredBy
+  });
+
+  if (opts?.byAdmin) {
+    if (!delivery.success) {
+      return {
+        success: false,
+        status: 500,
+        message: delivery.error || 'Failed to send password reset email.'
+      };
+    }
+    return {
+      success: true,
+      status: 200,
+      message: `Password reset link sent to ${cleanEmail}.`
+    };
+  }
+
+  return {
+    success: true,
+    status: 200,
+    message: GENERIC_FORGOT_PASSWORD_MESSAGE
+  };
+}
+
+export async function verifyResetTokenRecord(
+  token: string,
+  rawEmail?: string
+): Promise<{ valid: boolean; email?: string; error?: string }> {
+  if (!token || typeof token !== 'string' || token.trim().length < 16) {
+    return { valid: false, error: 'Invalid or missing password reset link. Please request a new one.' };
+  }
+
+  const cleanEmail = rawEmail ? rawEmail.trim().toLowerCase() : undefined;
+  const tokenHash = hashToken(token);
+  const record = await findResetTokenByHash(tokenHash);
+
+  if (!record) {
+    return { valid: false, error: 'Invalid or expired password reset link. Please request a new one.' };
+  }
+
+  if (cleanEmail && record.email.toLowerCase() !== cleanEmail) {
+    return { valid: false, error: 'Reset link does not match the requested email address.' };
+  }
+
+  if (record.used) {
+    return { valid: false, error: 'This password reset link has already been used. Please request a new one.' };
+  }
+
+  if (Date.now() > record.expiresAt) {
+    return { valid: false, error: 'This password reset link has expired (30-minute validity). Please request a new one.' };
+  }
+
+  return { valid: true, email: record.email };
+}
+
+export async function completePasswordReset(
+  token: string,
+  rawEmail: string | undefined,
+  newPassword: string,
+  confirmPassword?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const verification = await verifyResetTokenRecord(token, rawEmail);
+  if (!verification.valid || !verification.email) {
+    return { success: false, error: verification.error };
+  }
+
+  const strength = validatePasswordStrength(newPassword);
+  if (!strength.valid) {
+    return { success: false, error: strength.error };
+  }
+
+  if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+    return { success: false, error: 'Passwords do not match.' };
+  }
+
+  const tokenHash = hashToken(token);
+  const cleanEmail = verification.email.trim().toLowerCase();
+
+  const consumed = await consumePasswordResetToken(tokenHash, cleanEmail);
+  if (!consumed) {
+    return {
+      success: false,
+      error: 'This password reset link has expired or has already been used. Please request a new one.'
+    };
+  }
+
+  const user = await findUserByEmail(cleanEmail);
+  if (!user) {
+    return { success: false, error: 'Account not found. Please contact info@gulfaro.net.' };
+  }
+
+  user.password = undefined;
+  user.passwordHash = hashPassword(newPassword);
+  user.loginFailedAttempts = 0;
+  user.loginLockoutUntil = null;
+  user.forceLogoutBefore = Date.now();
+  await saveUser(user);
+
+  return {
+    success: true,
+    message: PASSWORD_RESET_SUCCESS_MESSAGE
+  };
+}
+
+export async function sendPlatformEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  category: 'verification' | 'password_reset' | 'welcome' | 'announcement' | 'security_alert' | 'admin_reset' | 'system';
+  triggeredBy?: string;
+}): Promise<{ success: boolean; messageId?: string; provider?: string; error?: string }> {
+  return deliverMail(opts);
+}

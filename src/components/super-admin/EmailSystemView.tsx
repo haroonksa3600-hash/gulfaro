@@ -116,7 +116,7 @@ export const EmailSystemView: React.FC<EmailSystemViewProps> = ({ onToast }) => 
               Active Mail Transport: {providerStatus?.activeProvider || 'Unknown'}
             </p>
             <p className="text-[11px] text-slate-500">
-              Verified Sender Identity: <span className="font-mono text-slate-700">{providerStatus?.fromEnv}</span> · API secrets are stored exclusively on the backend server.
+              Official Sender: <span className="font-mono text-slate-700">{providerStatus?.fromEnv || 'Gulfaro <info@gulfaro.net>'}</span> · Verification links expire in 24h; password reset links expire in 30m.
             </p>
           </div>
         </div>
@@ -264,7 +264,7 @@ export const EmailSystemView: React.FC<EmailSystemViewProps> = ({ onToast }) => 
               checked={emailConfig.welcomeEmailEnabled}
               onChange={e => setEmailConfig({ ...emailConfig, welcomeEmailEnabled: e.target.checked })}
             />
-            <span className="font-semibold text-slate-700">Enable Automated Welcome Email on Registration</span>
+            <span className="font-semibold text-slate-700">Send Welcome Email After Account Email Verification</span>
           </label>
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Welcome Email Body</label>

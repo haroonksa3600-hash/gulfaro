@@ -134,7 +134,7 @@ export const ManageJobsView: React.FC<ManageJobsViewProps> = ({
                 <Briefcase className="w-7 h-7 text-teal-600 shrink-0" />
                 <span>Manage Job Advertisements</span>
               </h1>
-              {currentUser && currentUser.emailVerified !== false && (
+              {currentUser && currentUser.emailVerified === true && (
                 <span
                   className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
                   title="Verified Gulfaro Employer Account"

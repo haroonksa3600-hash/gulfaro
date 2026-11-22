@@ -4,7 +4,9 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { JOB_CATEGORIES } from '../shared/jobCategories';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = process.env.GULFARO_DATA_DIR
+  ? path.resolve(process.env.GULFARO_DATA_DIR)
+  : path.resolve(process.cwd(), 'data');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -195,7 +197,7 @@ export interface SiteSettings {
   registration: {
     allowJobSeekerRegistration: boolean;
     allowEmployerRegistration: boolean;
-    emailVerificationMode: 'automatic' | 'required_for_badge' | 'optional';
+    emailVerificationMode: 'required' | 'automatic' | 'required_for_badge' | 'optional';
     spamProtectionEnabled: boolean;
     captchaEnabled: boolean;
     captchaProvider: 'turnstile' | 'hcaptcha' | 'builtin_challenge';
@@ -371,7 +373,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   registration: {
     allowJobSeekerRegistration: true,
     allowEmployerRegistration: true,
-    emailVerificationMode: 'automatic',
+    emailVerificationMode: 'required',
     spamProtectionEnabled: true,
     captchaEnabled: false,
     captchaProvider: 'builtin_challenge',
@@ -383,18 +385,18 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     blockedKeywords: ['pay for visa', 'visa fee advance', 'send money western union', 'processing fee upfront']
   },
   emailConfig: {
-    senderName: 'Gulfaro Official',
-    senderEmail: process.env.RESEND_FROM_EMAIL || 'security@gulfaro.com',
-    replyToEmail: 'admingulfaro@gmail.com',
-    verificationSubject: 'Verify Your Employer Corporate Email - Gulfaro',
-    verificationHeading: 'Official Employer Verification Gateway',
-    verificationBody: 'Please confirm ownership of your corporate email address using the 6-digit code or instant verification link below.',
+    senderName: process.env.EMAIL_FROM_NAME || 'Gulfaro',
+    senderEmail: process.env.EMAIL_FROM || 'info@gulfaro.net',
+    replyToEmail: process.env.EMAIL_FROM || 'info@gulfaro.net',
+    verificationSubject: 'Verify Your Gulfaro Account',
+    verificationHeading: 'Verify Your Gulfaro Account',
+    verificationBody: 'Thank you for creating a Gulfaro account. Please confirm ownership of your email address within 24 hours.',
     resetSubject: 'Reset Your Gulfaro Password',
     resetHeading: 'Account Security & Password Recovery',
-    resetBody: 'We received a request to reset the password associated with your Gulfaro account. Use the single-use link below within 1 hour.',
+    resetBody: 'We received a request to reset the password associated with your Gulfaro account. Use the single-use link below within 30 minutes.',
     welcomeEmailEnabled: true,
-    welcomeSubject: 'Welcome to Gulfaro GCC Job Marketplace',
-    welcomeBody: 'Your Gulfaro account is now active. Browse direct GCC vacancies or publish job advertisements immediately.'
+    welcomeSubject: 'Welcome to Gulfaro!',
+    welcomeBody: 'Your email address has been verified and your Gulfaro account is now active.'
   },
   cms: {
     siteName: 'Gulfaro',
@@ -431,8 +433,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
       },
       {
         id: 'faq-3',
-        question: 'How does automatic account verification work?',
-        answer: 'All registered Job Seeker and Employer accounts on Gulfaro are automatically verified upon registration, with immediate dashboard access and Verified account status.'
+        question: 'How does email verification work for new accounts?',
+        answer: 'Every new Job Seeker and Employer account receives a verification link from info@gulfaro.net valid for 24 hours. Clicking Verify My Account activates your account and sends your Welcome email.'
       }
     ],
     termsContent: 'Employers and agencies are strictly prohibited from demanding recruitment fees, visa charges, or interview processing payments from candidates. All listings must reflect genuine vacancies.',

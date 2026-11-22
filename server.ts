@@ -16,16 +16,24 @@ import {
   verifyResetTokenRecord,
   completePasswordReset,
   phonesMatch,
-  verifyAccessKeyAndGenerateToken,
-  resetPasswordWithJwt,
   issueUserSessionToken,
   verifyUserSessionToken,
+  issueEmailVerificationToken,
+  verifyEmailByToken,
+  resendVerificationEmail,
+  verifySmtpConnection,
+  isSmtpConfigured,
+  validatePasswordStrength,
+  cleanPhone,
+  REGISTRATION_SUCCESS_MESSAGE,
   UserRecord
 } from './server/authService';
 import { initializeSuperAdminStores } from './server/superAdminStore';
 import {
   appendAuthHistoryEntry,
   appendSystemErrorEntry,
+  checkDbRateLimit,
+  createUserTransactional,
   deleteJobById,
   findUserByEmail,
   findUserById,
@@ -71,7 +79,9 @@ const __dirname = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = Number(process.env.PORT) || 3000;
-const DATA_DIR = path.resolve(__dirname, 'data');
+const DATA_DIR = process.env.GULFARO_DATA_DIR
+  ? path.resolve(process.env.GULFARO_DATA_DIR)
+  : path.resolve(__dirname, 'data');
 
 // Ensure backup JSON data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -305,7 +315,8 @@ async function startServer() {
       status: 'ok',
       time: new Date().toISOString(),
       storageBackend: dbHealth.mode,
-      databaseConnected: dbHealth.connected
+      databaseConnected: dbHealth.connected,
+      smtpConfigured: isSmtpConfigured()
     });
   });
 
@@ -323,122 +334,141 @@ async function startServer() {
   }
 
   // =========================================================================
-  // Authentication & Password Reset API Endpoints
+  // Authentication, Email Verification & Password Reset API Endpoints
   // =========================================================================
 
-  // Request password reset email (Real email delivery)
+  // Verify newly registered user email using single-use 24h SHA-256 verification token
+  app.post('/api/auth/verify-email', async (req: Request, res: Response) => {
+    try {
+      const rawToken =
+        (req.body && typeof req.body.token === 'string' ? req.body.token : '') ||
+        (typeof req.query.token === 'string' ? req.query.token : '');
+
+      const result = await verifyEmailByToken(rawToken, getAppBaseUrl(req));
+      if (result.success) {
+        return res.status(200).json({
+          success: true,
+          message: result.message
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        code: result.code,
+        error: result.error
+      });
+    } catch (err: any) {
+      console.error('Error in /api/auth/verify-email:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to verify email address. Please try again later.'
+      });
+    }
+  });
+
+  // Resend account verification email (DB rate-limited, non-enumerating)
+  app.post('/api/auth/resend-verification', async (req: Request, res: Response) => {
+    try {
+      const email = req.body?.email;
+      const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+      const result = await resendVerificationEmail(
+        typeof email === 'string' ? email : '',
+        getAppBaseUrl(req),
+        clientIp
+      );
+
+      if (result.status >= 400) {
+        return res.status(result.status).json({
+          success: false,
+          error: result.error || 'Unable to resend verification email.'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: result.message
+      });
+    } catch (err: any) {
+      console.error('Error in /api/auth/resend-verification:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to process verification email request. Please try again later.'
+      });
+    }
+  });
+
+  // Request password reset email (Hostinger SMTP, 30-min single-use token, anti-enumeration)
   app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
     try {
-      const { email } = req.body;
-      if (!email || typeof email !== 'string' || !email.includes('@')) {
-        return res.status(400).json({ error: 'Please enter a valid email address.' });
+      const { email } = req.body || {};
+      if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        return res.status(400).json({ success: false, error: 'Please enter a valid email address.' });
       }
 
       const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
       const appUrl = getAppBaseUrl(req);
 
       const result = await sendRealPasswordResetEmail(email, appUrl, clientIp);
-      if (result.success) {
-        res.json(result);
-      } else {
-        res.status(400).json({ success: false, error: result.message });
+      if (result.status && result.status >= 400) {
+        return res.status(result.status).json({ success: false, error: result.message });
       }
+      return res.status(200).json({ success: true, message: result.message });
     } catch (err: any) {
       console.error('Error in /api/auth/forgot-password:', err);
-      res.status(500).json({ error: 'Failed to process password reset request. Please try again later.' });
+      return res.status(500).json({ error: 'Failed to process password reset request. Please try again later.' });
     }
   });
 
-  // Verify reset token validity
+  // Verify password reset token validity (?token=... with optional email check)
   app.post('/api/auth/verify-reset-token', async (req: Request, res: Response) => {
     try {
-      const { token, email } = req.body;
+      const token =
+        (req.body && typeof req.body.token === 'string' ? req.body.token : '') ||
+        (typeof req.query.token === 'string' ? req.query.token : '');
+      const email = req.body && typeof req.body.email === 'string' ? req.body.email : undefined;
+
       const result = await verifyResetTokenRecord(token, email);
       if (result.valid) {
-        res.json({ valid: true });
-      } else {
-        res.status(400).json({ valid: false, error: result.error });
+        return res.json({ valid: true });
       }
-    } catch (err: any) {
-      res.status(500).json({ valid: false, error: 'Failed to verify reset token.' });
+      return res.status(400).json({ valid: false, error: result.error });
+    } catch {
+      return res.status(500).json({ valid: false, error: 'Failed to verify reset token.' });
     }
   });
 
-  // Complete password reset
+  // Complete password reset and invalidate all sessions & sibling unused reset tokens
   app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
     try {
-      const { token, email, password } = req.body;
-      if (!password || password.length < 8) {
-        return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
-      }
-      if (!/[A-Z]/.test(password)) {
-        return res.status(400).json({ error: 'Password must contain at least one uppercase letter (A-Z).' });
-      }
-      if (!/\d/.test(password)) {
-        return res.status(400).json({ error: 'Password must contain at least one number (0-9).' });
+      const { token, email, password, newPassword, confirmPassword } = req.body || {};
+      const nextPassword = typeof password === 'string' && password ? password : (typeof newPassword === 'string' ? newPassword : '');
+      const strength = validatePasswordStrength(nextPassword);
+      if (!strength.valid) {
+        return res.status(400).json({ error: strength.error });
       }
 
-      const result = await completePasswordReset(token, email, password);
+      const result = await completePasswordReset(token, email, nextPassword, confirmPassword);
       if (result.success) {
-        res.json({ success: true, message: 'Password reset successful!' });
-      } else {
-        res.status(400).json({ error: result.error });
+        return res.json({ success: true, message: result.message });
       }
+      return res.status(400).json({ error: result.error });
     } catch (err: any) {
       console.error('Error in /api/auth/reset-password:', err);
-      res.status(500).json({ error: 'Failed to reset password. Please try again.' });
+      return res.status(500).json({ error: 'Failed to reset password. Please try again.' });
     }
   });
 
-  // Verify 5-digit Access Key (Account Recovery)
-  app.post('/api/auth/verify-access-key', async (req: Request, res: Response) => {
-    try {
-      const { email, accessKey } = req.body || {};
-      const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-
-      const result = await verifyAccessKeyAndGenerateToken(email, accessKey, clientIp);
-      if (result.success) {
-        res.status(200).json({ success: true, token: result.token, message: 'Access Key verified successfully.' });
-      } else {
-        res.status(result.status || 400).json({ success: false, error: result.error });
-      }
-    } catch (err: any) {
-      console.error('Error in /api/auth/verify-access-key:', err);
-      res.status(500).json({ success: false, error: 'Verification service error. Please try again.' });
-    }
-  });
-
-  // Reset Password using verified 10-minute JWT session token
-  app.post('/api/auth/reset-password-access-key', async (req: Request, res: Response) => {
-    try {
-      const { resetToken, newPassword } = req.body || {};
-      const result = await resetPasswordWithJwt(resetToken, newPassword);
-      if (result.success) {
-        res.status(200).json({
-          success: true,
-          message: 'Password updated successfully! You can now sign in with your new password.'
-        });
-      } else {
-        res.status(result.status || 400).json({ success: false, error: result.error });
-      }
-    } catch (err: any) {
-      console.error('Error in /api/auth/reset-password-access-key:', err);
-      res.status(500).json({ success: false, error: 'Password update service error. Please try again.' });
-    }
-  });
-
-  // Employer Email Verification is removed (registered employers receive automatic Verified Employer badge)
+  // Legacy employer verification endpoint retired in favor of /api/auth/verify-email
   app.post('/api/auth/send-employer-verification', (_req: Request, res: Response) => {
     return res.status(410).json({
       success: false,
-      error: 'Employer email verification has been removed. All registered employer accounts automatically receive the Verified Employer badge.'
+      error: 'Legacy endpoint retired. Use POST /api/auth/resend-verification for account email verification.'
     });
   });
 
   app.post('/api/auth/verify-employer-email', (_req: Request, res: Response) => {
     return res.status(410).json({
       success: false,
-      error: 'Employer email verification has been removed. All registered employer accounts automatically receive the Verified Employer badge.'
+      error: 'Legacy endpoint retired. Use POST /api/auth/verify-email to verify your Gulfaro account.'
     });
   });
 
@@ -468,7 +498,6 @@ async function startServer() {
     const copy: any = { ...u };
     delete copy.password;
     delete copy.passwordHash;
-    delete copy.accessKeyHash;
     copy.emailVerified = Boolean(u.emailVerified);
     copy.emailVerifiedAt = u.emailVerifiedAt;
     return copy;
@@ -744,12 +773,177 @@ async function startServer() {
     }
   });
 
-  // Public registration paused during Release A verification security upgrade bridge
-  app.post('/api/auth/register', async (_req: Request, res: Response) => {
-    return res.status(503).json({
-      error: 'New registrations are temporarily paused while email verification security upgrades are being completed. Please check back shortly.',
-      code: 'REGISTRATION_TEMPORARILY_PAUSED'
-    });
+  // Public user registration (Job Seeker & Employer) — starts unverified and dispatches verification email
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    const userAgent = (req.headers['user-agent'] || '').slice(0, 200);
+    try {
+      const settings = await getSiteSettings();
+      if (settings.emergency.emergencyShutdown || settings.emergency.maintenanceMode) {
+        return res.status(503).json({
+          error: settings.emergency.emergencyShutdownMessage || 'Registrations are temporarily paused during scheduled maintenance.'
+        });
+      }
+
+      const body = req.body || {};
+      const requestedRole = body.role === 'employer' ? 'employer' : 'job_seeker';
+
+      if (requestedRole === 'job_seeker' && settings.registration.allowJobSeekerRegistration === false) {
+        return res.status(403).json({ error: 'Job seeker registrations are currently disabled by administration.' });
+      }
+      if (requestedRole === 'employer' && settings.registration.allowEmployerRegistration === false) {
+        return res.status(403).json({ error: 'Employer registrations are currently disabled by administration.' });
+      }
+
+      const ipAllowed = await checkDbRateLimit(`register:ip:${clientIp}`, 10, 15 * 60 * 1000);
+      if (!ipAllowed) {
+        return res.status(429).json({
+          error: 'Too many registration attempts from this network. Please wait 15 minutes and try again.'
+        });
+      }
+
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      const confirmPassword = typeof body.confirmPassword === 'string' ? body.confirmPassword : undefined;
+      const rawPhone = typeof body.phone === 'string' ? body.phone.trim() : '';
+      const rawWhatsapp = typeof body.whatsapp === 'string' ? body.whatsapp.trim() : '';
+      const country = typeof body.country === 'string' ? body.country.trim() : '';
+      const city = typeof body.city === 'string' ? body.city.trim() : '';
+
+      if (!name || name.length < 2) {
+        return res.status(400).json({ error: 'Please enter your full name.' });
+      }
+      if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+        return res.status(400).json({ error: 'Please enter a valid email address.' });
+      }
+      const cleanedPhone = cleanPhone(rawPhone);
+      if (!cleanedPhone || cleanedPhone.replace(/\D/g, '').length < 7) {
+        return res.status(400).json({ error: 'Please enter a valid phone number.' });
+      }
+      if (!country) {
+        return res.status(400).json({ error: 'Please select your GCC country or location.' });
+      }
+
+      const strength = validatePasswordStrength(password);
+      if (!strength.valid) {
+        return res.status(400).json({ error: strength.error });
+      }
+      if (confirmPassword !== undefined && password !== confirmPassword) {
+        return res.status(400).json({ error: 'Passwords do not match.' });
+      }
+
+      const professionalTitle = typeof body.professionalTitle === 'string' ? body.professionalTitle.trim() : '';
+      const companyName = typeof body.companyName === 'string' ? body.companyName.trim() : '';
+      const hiringOrgName = typeof body.hiringOrgName === 'string' ? body.hiringOrgName.trim() : '';
+      const companyType = typeof body.companyType === 'string' ? body.companyType.trim() : '';
+
+      if (requestedRole === 'job_seeker' && !professionalTitle) {
+        return res.status(400).json({ error: 'Please enter your professional job title or role.' });
+      }
+      if (requestedRole === 'employer' && !companyName) {
+        return res.status(400).json({ error: 'Please enter your company or organization name.' });
+      }
+
+      if (settings.registration.spamProtectionEnabled) {
+        const emailDomain = rawEmail.split('@')[1] || '';
+        const blockedDomains = (settings.registration.blockedDomains || []).map(d => d.toLowerCase().trim()).filter(Boolean);
+        if (blockedDomains.some(d => emailDomain === d || emailDomain.endsWith(`.${d}`))) {
+          return res.status(400).json({ error: 'Disposable or blocked email domains are not permitted on Gulfaro.' });
+        }
+        const combinedText = `${name} ${rawEmail} ${companyName} ${professionalTitle}`.toLowerCase();
+        const blockedKw = (settings.registration.blockedKeywords || []).find(kw => kw && combinedText.includes(kw.toLowerCase()));
+        if (blockedKw) {
+          return res.status(400).json({ error: 'Registration blocked by platform safety rules.' });
+        }
+      }
+
+      const users = await getUsers();
+      if (users.some(u => u.email.toLowerCase() === rawEmail)) {
+        return res.status(409).json({
+          error: 'An account with this email address already exists. Please sign in instead.'
+        });
+      }
+
+      const phoneConflict = users.find(
+        u =>
+          phonesMatch(u.phone, cleanedPhone) ||
+          phonesMatch(u.whatsapp, cleanedPhone) ||
+          (rawWhatsapp && (phonesMatch(u.phone, rawWhatsapp) || phonesMatch(u.whatsapp, rawWhatsapp)))
+      );
+      if (phoneConflict) {
+        return res.status(409).json({
+          error: 'An account with this phone number already exists. Please sign in instead.'
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      const newUser: UserRecord = {
+        id: `usr-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        name,
+        email: rawEmail,
+        passwordHash: hashPassword(password),
+        role: requestedRole,
+        phone: cleanedPhone,
+        whatsapp: cleanPhone(rawWhatsapp) || cleanedPhone,
+        country,
+        city: city || undefined,
+        professionalTitle: requestedRole === 'job_seeker' ? professionalTitle : undefined,
+        companyName: requestedRole === 'employer' ? companyName : undefined,
+        hiringOrgName: requestedRole === 'employer' ? (hiringOrgName || companyName) : undefined,
+        companyType: requestedRole === 'employer' ? (companyType || undefined) : undefined,
+        headline:
+          typeof body.headline === 'string' && body.headline.trim()
+            ? body.headline.trim()
+            : requestedRole === 'job_seeker'
+              ? professionalTitle
+              : `Recruiter at ${companyName}`,
+        bio: typeof body.bio === 'string' && body.bio.trim() ? body.bio.trim() : undefined,
+        iqamaStatus: typeof body.iqamaStatus === 'string' && body.iqamaStatus.trim() ? body.iqamaStatus.trim() : undefined,
+        experienceYears:
+          typeof body.experienceYears === 'string' && body.experienceYears.trim()
+            ? body.experienceYears.trim()
+            : undefined,
+        emailVerified: false,
+        emailVerifiedAt: undefined,
+        loginFailedAttempts: 0,
+        loginLockoutUntil: null,
+        status: 'active',
+        createdAt: nowIso
+      };
+
+      await createUserTransactional(newUser);
+
+      const appUrl = getAppBaseUrl(req);
+      const verificationDispatch = await issueEmailVerificationToken(newUser, appUrl, clientIp);
+      if (!verificationDispatch.sent) {
+        console.log('[Gulfaro Registration] Account created unverified; verification email not dispatched:', verificationDispatch.error);
+      }
+
+      await appendAuthHistoryEntry({
+        actorType: requestedRole === 'employer' ? 'employer' : 'user',
+        actorId: newUser.id,
+        emailOrUsername: newUser.email,
+        event: 'register',
+        success: true,
+        ip: clientIp,
+        userAgent,
+        reason: verificationDispatch.sent ? 'Account registered; verification email sent' : 'Account registered; pending verification email',
+        suspicious: false
+      });
+
+      return res.status(201).json({
+        success: true,
+        requiresVerification: true,
+        emailSent: verificationDispatch.sent,
+        message: REGISTRATION_SUCCESS_MESSAGE,
+        user: sanitizeUser(newUser)
+      });
+    } catch (err: any) {
+      console.error('[Auth API /api/auth/register] Error:', err);
+      await appendSystemErrorEntry({ level: 'error', source: '/api/auth/register', message: err?.message || 'Registration error' }).catch(() => {});
+      return res.status(500).json({ error: 'Registration failed due to a server error. Please try again.' });
+    }
   });
 
   // Get currently authenticated marketplace user profile
@@ -1113,7 +1307,7 @@ async function startServer() {
         viewsCount: 1,
         inquiriesCount: 0,
         status: 'active',
-        isEmployerVerified: true
+        isEmployerVerified: actor.user ? actor.user.emailVerified === true : true
       };
 
       await upsertJob(newJob);
@@ -1235,7 +1429,7 @@ async function startServer() {
         howToApply: 'email',
         id: existing.id,
         userId: existing.userId,
-        isEmployerVerified: Boolean(existing.isEmployerVerified) || Boolean(existing.userId)
+        isEmployerVerified: actor.user ? actor.user.emailVerified === true : Boolean(existing.isEmployerVerified)
       };
       await upsertJob(updatedJob);
       res.json(updatedJob);
@@ -1565,6 +1759,7 @@ async function startServer() {
       'Disallow: /manage-jobs',
       'Disallow: /forgot-password',
       'Disallow: /reset-password',
+      'Disallow: /verify-email',
       'Disallow: /unauthorized',
       '',
       `Sitemap: ${baseUrl}/sitemap.xml`,
@@ -1955,8 +2150,13 @@ ${xmlItems}
         },
         '/forgot-password': {
           title: 'Account & Password Recovery | Gulfaro',
-          description: 'Recover access to your Gulfaro employer or job seeker account using your registered email or 5-digit access key.',
+          description: 'Recover access to your Gulfaro employer or job seeker account using your registered email address.',
           canonicalPath: '/forgot-password'
+        },
+        '/verify-email': {
+          title: 'Verify Email Address | Gulfaro',
+          description: 'Verify your Gulfaro account email address to activate your job seeker or employer account.',
+          canonicalPath: '/verify-email'
         },
         '/reset-password': {
           title: 'Reset Password | Gulfaro',
@@ -2515,6 +2715,19 @@ ${xmlItems}
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Gulfaro server listening on http://0.0.0.0:${PORT} (env: ${isProduction ? 'production' : 'development'})`);
+    if (isSmtpConfigured()) {
+      verifySmtpConnection()
+        .then(status => {
+          if (status.ok) {
+            console.log(`[Gulfaro SMTP] Verified connection via ${status.provider}`);
+          } else {
+            console.warn(`[Gulfaro SMTP] Startup verification failed: ${status.error}`);
+          }
+        })
+        .catch(() => {});
+    } else {
+      console.log('[Gulfaro SMTP] Skipping startup check (SMTP environment variables not configured).');
+    }
   });
 }
 

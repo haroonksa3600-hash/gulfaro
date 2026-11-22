@@ -1,28 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { GccCountry, GCC_COUNTRIES, User } from '../types/job';
-import { storageService, DEMO_USERS } from '../services/storage';
+import { storageService } from '../services/storage';
 import gccMeetingImg from '../assets/images/gcc_recruitment_meeting_1793920057434.jpg';
-import { 
-  Building, 
-  UserCheck, 
-  Lock, 
-  Mail, 
-  Phone, 
-  Eye, 
-  EyeOff, 
-  CheckCircle2, 
+import {
+  Building,
+  UserCheck,
+  Lock,
+  Mail,
+  Phone,
+  Eye,
+  EyeOff,
+  CheckCircle2,
   AlertCircle,
   Briefcase,
   Check,
   X,
   Loader2,
-  AlertTriangle,
-  KeyRound
+  RefreshCw,
+  ArrowRight
 } from 'lucide-react';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'signup';
   initialRole?: 'job_seeker' | 'employer';
+  initialNotice?: string | null;
   onAuthSuccess: (user: User) => void;
   onCancel: () => void;
   onNavigateToForgotPassword?: () => void;
@@ -41,6 +42,7 @@ const GCC_COUNTRY_CHOICES: { value: GccCountry; label: string; flag: string; pho
 export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'login',
   initialRole = 'job_seeker',
+  initialNotice = null,
   onAuthSuccess,
   onCancel,
   onNavigateToForgotPassword
@@ -72,10 +74,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Compulsory 5-Digit Access Key (Account Recovery PIN)
-  const [accessKey, setAccessKey] = useState('');
-  const [showAccessKeyTooltip, setShowAccessKeyTooltip] = useState(false);
-
   // Job Seeker Specific Mandatory Field
   const [professionalTitle, setProfessionalTitle] = useState('');
 
@@ -85,8 +83,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   // UI & Feedback States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(initialNotice || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Email verification pending / resend states
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
+  const [pendingVerificationMessage, setPendingVerificationMessage] = useState<string | null>(null);
+  const [unverifiedLoginEmail, setUnverifiedLoginEmail] = useState<string | null>(null);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
+  const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (initialNotice) {
+      setSuccessMsg(initialNotice);
+      setErrorMsg(null);
+    }
+  }, [initialNotice]);
 
   // Password validation rules for registration
   const hasMinLength = password.length >= 8;
@@ -104,6 +116,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  const handleResendVerification = async (targetEmail: string) => {
+    setResendFeedback(null);
+    setIsResendingVerification(true);
+    const res = await storageService.resendVerificationEmailAsync(targetEmail);
+    setIsResendingVerification(false);
+    if (res.success) {
+      setResendFeedback({
+        type: 'success',
+        text:
+          res.message ||
+          'If an unverified Gulfaro account exists with that email address, a new verification link has been sent.'
+      });
+    } else {
+      setResendFeedback({
+        type: 'error',
+        text: res.error || 'Unable to resend verification email right now. Please try again shortly.'
+      });
+    }
+  };
+
   // ----------------------------------------------------
   // Sign In Handler (Email Address & Password ONLY)
   // ----------------------------------------------------
@@ -111,6 +143,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setUnverifiedLoginEmail(null);
+    setResendFeedback(null);
 
     const emailTrimmed = loginEmail.toLowerCase().trim();
     if (!emailTrimmed) {
@@ -118,7 +152,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    // Explicitly reject phone login attempts with clear user guidance
     if (!emailTrimmed.includes('@') && /^[+0-9\s\-()]+$/.test(emailTrimmed)) {
       setErrorMsg('Users must log in using their registered email address. Phone number login is not supported.');
       return;
@@ -135,6 +168,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       const res = await storageService.loginUserAsync(emailTrimmed, loginPassword, rememberMe);
 
       if (!res.success || !res.user) {
+        if (
+          res.code === 'EMAIL_NOT_VERIFIED' ||
+          (res.error || '').toLowerCase().includes('verify your email')
+        ) {
+          setUnverifiedLoginEmail(emailTrimmed);
+        }
         setErrorMsg(res.error || 'Failed to authenticate. Please check your credentials.');
         setIsSubmitting(false);
         return;
@@ -158,12 +197,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setResendFeedback(null);
 
     const trimmedName = fullName.trim();
     const trimmedEmail = regEmail.trim().toLowerCase();
     const trimmedPhone = phone.trim();
 
-    // 1. Mandatory Common Fields Validation
     if (!trimmedName) {
       setErrorMsg('Full Name is required.');
       return;
@@ -177,7 +216,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    // 2. Role-specific Mandatory Fields
     if (role === 'job_seeker') {
       if (!professionalTitle.trim()) {
         setErrorMsg('Professional Title / Trade is required for Job Seekers.');
@@ -194,7 +232,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       }
     }
 
-    // 3. Password Rules Validation
     if (!hasMinLength) {
       setErrorMsg('Password must be at least 8 characters long.');
       return;
@@ -212,15 +249,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    // 3b. Compulsory 5-Digit Numeric Access Key Validation
-    if (!accessKey || !/^\d{5}$/.test(accessKey)) {
-      setErrorMsg('A 5-digit numeric Access Key is compulsory (numbers only, exactly 5 digits).');
-      return;
-    }
-
     setIsSubmitting(true);
 
-    // 4. Duplicate Account Protection Pre-check
     try {
       const dup = await storageService.checkDuplicateAccountAsync(trimmedEmail, trimmedPhone);
       if (dup.exists) {
@@ -229,10 +259,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         return;
       }
     } catch (dupErr) {
-      console.warn('[AuthPage] Pre-check error (will be checked by server queue):', dupErr);
+      console.warn('[AuthPage] Pre-check error (will be checked by server):', dupErr);
     }
 
-    // 5. Submit Registration to Backend
     try {
       const countryConfig = GCC_COUNTRIES[gccCountry];
       const city = countryConfig?.topCities[0] || 'Riyadh';
@@ -241,31 +270,42 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         name: trimmedName,
         email: trimmedEmail,
         password,
+        confirmPassword,
         role,
         country: gccCountry,
         city,
         phone: trimmedPhone,
         whatsapp: trimmedPhone,
-        accessKey,
-        // Job Seeker mandatory field:
         professionalTitle: role === 'job_seeker' ? professionalTitle.trim() : undefined,
         headline: role === 'job_seeker' ? professionalTitle.trim() : `Recruitment Lead at ${companyName.trim()}`,
-        // Employer mandatory fields:
         companyName: role === 'employer' ? companyName.trim() : undefined,
         hiringOrgName: role === 'employer' ? hiringOrgName.trim() : undefined,
         companyType: 'direct-employer'
       });
 
-      if (!res.success || !res.user) {
+      if (!res.success) {
         setErrorMsg(res.error || 'Registration failed. Please check your information.');
         setIsSubmitting(false);
         return;
       }
 
-      setSuccessMsg('Account created and verified automatically! Logging you in...');
-      setTimeout(() => {
-        onAuthSuccess(res.user!);
-      }, 400);
+      if (res.requiresVerification !== false) {
+        setPendingVerificationEmail(trimmedEmail);
+        setPendingVerificationMessage(
+          res.message ||
+            'Your registration was successful. Please check your email and click the verification link to activate your Gulfaro account.'
+        );
+        setPassword('');
+        setConfirmPassword('');
+        return;
+      }
+
+      if (res.user) {
+        setSuccessMsg('Account activated! Logging you in...');
+        setTimeout(() => {
+          onAuthSuccess(res.user!);
+        }, 400);
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'An unexpected error occurred during registration.');
     } finally {
@@ -385,6 +425,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     setMode('login');
                     setErrorMsg(null);
                     setSuccessMsg(null);
+                    setPendingVerificationEmail(null);
+                    setPendingVerificationMessage(null);
+                    setUnverifiedLoginEmail(null);
+                    setResendFeedback(null);
                   }}
                   className={`px-4 py-2 rounded-md transition-colors cursor-pointer ${
                     mode === 'login'
@@ -400,6 +444,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     setMode('signup');
                     setErrorMsg(null);
                     setSuccessMsg(null);
+                    setUnverifiedLoginEmail(null);
+                    setResendFeedback(null);
                   }}
                   className={`px-4 py-2 rounded-md transition-colors cursor-pointer ${
                     mode === 'signup'
@@ -421,9 +467,49 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
             {/* Error Banner */}
             {errorMsg && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs flex items-center gap-2 mb-4 animate-in fade-in">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span className="font-semibold">{errorMsg}</span>
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs space-y-2 mb-4 animate-in fade-in">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span className="font-semibold">{errorMsg}</span>
+                </div>
+                {unverifiedLoginEmail && mode === 'login' && (
+                  <div className="pt-2 border-t border-rose-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[11px] text-rose-900">
+                      Didn&apos;t receive the verification link for <strong>{unverifiedLoginEmail}</strong>?
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isResendingVerification}
+                      onClick={() => handleResendVerification(unverifiedLoginEmail)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 disabled:opacity-60 text-white font-bold text-[11px] transition-colors cursor-pointer shrink-0"
+                    >
+                      {isResendingVerification ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Resend Verification Email</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Resend Verification Feedback Banner (Login or Signup) */}
+            {resendFeedback && (
+              <div
+                className={`p-3 rounded-lg text-xs flex items-start gap-2 mb-4 border ${
+                  resendFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                {resendFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <span className="font-semibold">{resendFeedback.text}</span>
               </div>
             )}
 
@@ -533,11 +619,72 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             {/* ========================================================= */}
             {/* 2. CREATE ACCOUNT FORM (Job Seeker OR Employer)           */}
             {/* ========================================================= */}
-            {mode === 'signup' && (
+            {mode === 'signup' && pendingVerificationEmail && (
+              <div className="space-y-4 text-xs animate-in fade-in">
+                <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5">
+                      <h2 className="text-base font-extrabold text-emerald-950">Check Your Email to Activate Your Account</h2>
+                      <p className="text-xs text-emerald-900 font-semibold leading-relaxed">
+                        {pendingVerificationMessage}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-emerald-200/80 rounded-lg p-3 space-y-1 text-[11px] text-slate-700">
+                    <p>
+                      Verification link dispatched from <strong>info@gulfaro.net</strong> to:{' '}
+                      <span className="font-mono font-bold text-slate-900">{pendingVerificationEmail}</span>
+                    </p>
+                    <p className="text-slate-500">
+                      The link expires in 24 hours. Please check your inbox and Spam/Junk folder if it does not appear within a minute.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isResendingVerification}
+                    onClick={() => handleResendVerification(pendingVerificationEmail)}
+                    className="flex-1 py-2.5 px-4 border border-slate-300 hover:bg-slate-50 disabled:opacity-60 text-slate-800 font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isResendingVerification ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Resend Verification Email</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const registered = pendingVerificationEmail;
+                      setPendingVerificationEmail(null);
+                      setPendingVerificationMessage(null);
+                      setResendFeedback(null);
+                      setLoginEmail(registered || '');
+                      setMode('login');
+                    }}
+                    className="flex-1 py-2.5 px-4 bg-slate-900 hover:bg-teal-600 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Go to Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mode === 'signup' && !pendingVerificationEmail && (
               <form onSubmit={handleSignupSubmit} className="space-y-3.5 text-xs">
                 <div>
                   <h1 className="text-lg font-bold text-slate-900">Create a Gulfaro Account</h1>
-                  <p className="text-slate-500 text-xs">Select your account type — accounts are verified automatically upon signup</p>
+                  <p className="text-slate-500 text-xs">Select your account type — email verification via link is required to activate your account</p>
                 </div>
 
                 {/* Account Type Selector: "I am a Job Seeker" vs "I am an Employer" */}
@@ -895,78 +1042,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   )}
                 </div>
 
-                {/* -------------------------------------------------- */}
-                {/* Access Key Section (COMPULSORY 5-Digit PIN)        */}
-                {/* -------------------------------------------------- */}
-                <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <label htmlFor="reg-access-key" className="font-bold text-slate-800 text-xs">
-                        Access Key <span className="text-rose-500">*</span>
-                      </label>
-
-                      {/* Tooltip Alert/Warning Icon with Hover & Click Behavior */}
-                      <div className="relative inline-flex items-center">
-                        <button
-                          type="button"
-                          onClick={() => setShowAccessKeyTooltip(!showAccessKeyTooltip)}
-                          onMouseEnter={() => setShowAccessKeyTooltip(true)}
-                          onMouseLeave={() => setShowAccessKeyTooltip(false)}
-                          className="text-amber-600 hover:text-amber-700 p-0.5 rounded-full hover:bg-amber-100 transition-colors cursor-pointer focus:outline-none"
-                          title="Click or hover for Access Key recovery notice"
-                          aria-label="Access Key security notice"
-                        >
-                          <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        </button>
-
-                        {showAccessKeyTooltip && (
-                          <div
-                            role="tooltip"
-                            className="absolute left-0 bottom-full mb-2 w-64 p-2.5 bg-slate-900 text-white text-[11px] rounded-lg shadow-xl z-30 border border-slate-700 pointer-events-none animate-in fade-in zoom-in-95"
-                          >
-                            <p className="leading-snug font-medium">
-                              Keep your Access Key private and safe because through the Access Key you can Recover Your Account.
-                            </p>
-                            <div className="absolute left-3 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-900" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider">
-                      5-DIGIT PIN
-                    </span>
-                  </div>
-
-                  <div className="relative">
-                    <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-                    <input
-                      id="reg-access-key"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]{5}"
-                      maxLength={5}
-                      required
-                      value={accessKey}
-                      onChange={(e) => {
-                        // Strict validation: Only numeric digits (no letters), maximum 5 digits
-                        const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 5);
-                        setAccessKey(numericOnly);
-                        if (errorMsg) setErrorMsg(null);
-                      }}
-                      placeholder="e.g. 58291"
-                      className="w-full pl-9 pr-14 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs font-mono tracking-widest bg-white"
-                    />
-                    <div className="absolute right-3 top-2 text-[10px] font-mono font-semibold text-slate-400">
-                      {accessKey.length}/5
-                    </div>
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 leading-tight">
-                    Must be exactly 5 numeric digits (0-9). Keep this PIN safe — it is required to verify your identity and recover your account if you forget your password.
-                  </p>
-                </div>
-
                 <div className="pt-1">
                   <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-600">
                     <input
@@ -983,13 +1058,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !isPasswordValid || accessKey.length !== 5}
+                  disabled={isSubmitting || !isPasswordValid}
                   className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Creating Account & Saving...</span>
+                      <span>Creating Account & Sending Verification...</span>
                     </>
                   ) : (
                     <span>

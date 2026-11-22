@@ -52,11 +52,15 @@ import {
 } from './superAdminStore';
 import { resolveJobCategoryId } from '../shared/jobCategories';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = process.env.GULFARO_DATA_DIR
+  ? path.resolve(process.env.GULFARO_DATA_DIR)
+  : path.resolve(process.cwd(), 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'reset_tokens.json');
 const VERIFICATIONS_FILE = path.join(DATA_DIR, 'verification_codes.json');
+const EMAIL_VERIFICATION_TOKENS_FILE = path.join(DATA_DIR, 'email_verification_tokens.json');
+const RATE_LIMITS_FILE = path.join(DATA_DIR, 'auth_rate_limits.json');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -83,9 +87,6 @@ export interface RepoUserRecord {
   experienceYears?: string;
   emailVerified?: boolean;
   emailVerifiedAt?: string;
-  accessKeyHash?: string;
-  failedAttempts?: number;
-  lockoutUntil?: number | null;
   loginFailedAttempts?: number;
   loginLockoutUntil?: number | null;
   status?: 'active' | 'suspended' | 'banned' | 'deactivated' | 'pending_deletion';
@@ -100,7 +101,18 @@ export interface RepoUserRecord {
 
 export interface RepoResetTokenRecord {
   tokenHash: string;
-  token?: string;
+  userId?: string;
+  email: string;
+  expiresAt: number;
+  used: boolean;
+  usedAt?: number;
+  createdAt: number;
+  ip?: string;
+}
+
+export interface RepoEmailVerificationTokenRecord {
+  tokenHash: string;
+  userId: string;
   email: string;
   expiresAt: number;
   used: boolean;
@@ -275,6 +287,39 @@ export function writeVerificationCodesJson(records: RepoVerificationCodeRecord[]
   fs.writeFileSync(VERIFICATIONS_FILE, JSON.stringify(records, null, 2), 'utf-8');
 }
 
+export function readEmailVerificationTokensJson(): RepoEmailVerificationTokenRecord[] {
+  try {
+    if (!fs.existsSync(EMAIL_VERIFICATION_TOKENS_FILE)) return [];
+    const parsed = JSON.parse(fs.readFileSync(EMAIL_VERIFICATION_TOKENS_FILE, 'utf-8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeEmailVerificationTokensJson(records: RepoEmailVerificationTokenRecord[]): void {
+  fs.writeFileSync(EMAIL_VERIFICATION_TOKENS_FILE, JSON.stringify(records, null, 2), 'utf-8');
+}
+
+interface RateLimitRow {
+  rateKey: string;
+  attemptCount: number;
+  windowStartedAt: number;
+}
+
+function readRateLimitsJson(): Record<string, RateLimitRow> {
+  try {
+    if (!fs.existsSync(RATE_LIMITS_FILE)) return {};
+    return JSON.parse(fs.readFileSync(RATE_LIMITS_FILE, 'utf-8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRateLimitsJson(data: Record<string, RateLimitRow>): void {
+  fs.writeFileSync(RATE_LIMITS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
 // =========================================================================
 // Row Mappers (PostgreSQL <-> Application Domain Types)
 // =========================================================================
@@ -301,9 +346,6 @@ function mapUserRow(row: any): RepoUserRecord {
     experienceYears: row.experience_years || undefined,
     emailVerified: Boolean(row.email_verified),
     emailVerifiedAt: row.email_verified_at ? toIsoString(row.email_verified_at) : undefined,
-    accessKeyHash: row.access_key_hash || undefined,
-    failedAttempts: Number(row.failed_attempts || 0),
-    lockoutUntil: toMsOrNull(row.lockout_until),
     loginFailedAttempts: Number(row.login_failed_attempts || 0),
     loginLockoutUntil: toMsOrNull(row.login_lockout_until),
     status: row.status || 'active',
@@ -421,16 +463,16 @@ export async function upsertUserPg(client: PoolClient, u: RepoUserRecord): Promi
   await client.query(
     `INSERT INTO public.users (
       id, name, email, phone, phone_digits, whatsapp, role, country, city,
-      password_hash, access_key_hash, failed_attempts, lockout_until,
+      password_hash,
       login_failed_attempts, login_lockout_until, email_verified, email_verified_at,
       status, suspension_reason, posting_restricted, is_featured_employer,
       force_logout_before, last_login_at, last_login_ip, created_at, updated_at
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,
-      $10,$11,$12,$13,
-      $14,$15,$16,$17,
-      $18,$19,$20,$21,
-      $22,$23,$24,$25,NOW()
+      $10,
+      $11,$12,$13,$14,
+      $15,$16,$17,$18,
+      $19,$20,$21,$22,NOW()
     )
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
@@ -442,9 +484,6 @@ export async function upsertUserPg(client: PoolClient, u: RepoUserRecord): Promi
       country = EXCLUDED.country,
       city = EXCLUDED.city,
       password_hash = EXCLUDED.password_hash,
-      access_key_hash = COALESCE(EXCLUDED.access_key_hash, public.users.access_key_hash),
-      failed_attempts = EXCLUDED.failed_attempts,
-      lockout_until = EXCLUDED.lockout_until,
       login_failed_attempts = EXCLUDED.login_failed_attempts,
       login_lockout_until = EXCLUDED.login_lockout_until,
       email_verified = EXCLUDED.email_verified,
@@ -468,9 +507,6 @@ export async function upsertUserPg(client: PoolClient, u: RepoUserRecord): Promi
       u.country || 'saudi-arabia',
       u.city || 'Riyadh',
       passwordHash,
-      u.accessKeyHash || null,
-      Number(u.failedAttempts || 0),
-      toIsoOrNull(u.lockoutUntil),
       Number(u.loginFailedAttempts || 0),
       toIsoOrNull(u.loginLockoutUntil),
       Boolean(u.emailVerified),
@@ -850,7 +886,297 @@ export async function syncEmployerVerifiedOnJobs(userId: string, _email: string,
 
 // Legacy startup verification backfill removed in Release A to preserve real email_verified states.
 
-// --- Verification Codes & Reset Tokens ---
+// --- Email Verification Tokens, Password Reset Tokens & Persistent Rate Limits ---
+
+export async function createEmailVerificationToken(record: RepoEmailVerificationTokenRecord): Promise<void> {
+  const cleanEmail = record.email.trim().toLowerCase();
+  const nowIso = new Date().toISOString();
+
+  if (!isPostgresEnabled()) {
+    const existing = readEmailVerificationTokensJson();
+    const nowMs = Date.now();
+    const updated = existing.map(item =>
+      !item.used && (item.email.toLowerCase() === cleanEmail || item.userId === record.userId)
+        ? { ...item, used: true, usedAt: nowMs }
+        : item
+    );
+    updated.unshift({
+      tokenHash: record.tokenHash,
+      userId: record.userId,
+      email: cleanEmail,
+      expiresAt: record.expiresAt,
+      used: false,
+      createdAt: record.createdAt || nowMs,
+      ip: record.ip
+    });
+    if (updated.length > 5000) updated.length = 5000;
+    writeEmailVerificationTokensJson(updated);
+    return;
+  }
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE public.email_verification_tokens
+       SET used = TRUE, used_at = $1
+       WHERE used = FALSE AND (LOWER(email) = $2 OR user_id = $3)`,
+      [nowIso, cleanEmail, record.userId]
+    );
+
+    await client.query(
+      `INSERT INTO public.email_verification_tokens (
+        token_hash, user_id, email, expires_at, used, ip, created_at
+      ) VALUES ($1, $2, $3, $4, FALSE, $5, $6)`,
+      [
+        record.tokenHash,
+        record.userId,
+        cleanEmail,
+        toIsoOrNull(record.expiresAt) || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        record.ip || null,
+        toIsoOrNull(record.createdAt) || nowIso
+      ]
+    );
+  });
+}
+
+export async function consumeEmailVerificationToken(
+  tokenHash: string
+): Promise<{
+  status: 'valid' | 'not_found' | 'already_used' | 'expired';
+  record?: RepoEmailVerificationTokenRecord;
+}> {
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  if (!isPostgresEnabled()) {
+    const records = readEmailVerificationTokensJson();
+    const idx = records.findIndex(r => r.tokenHash === tokenHash);
+    if (idx === -1) return { status: 'not_found' };
+
+    const rec = records[idx];
+    if (rec.used) return { status: 'already_used', record: rec };
+    if (nowMs > rec.expiresAt) return { status: 'expired', record: rec };
+
+    records[idx] = { ...rec, used: true, usedAt: nowMs };
+    writeEmailVerificationTokensJson(records);
+    return { status: 'valid', record: records[idx] };
+  }
+
+  return withTransaction(async (client) => {
+    const existingRes = await client.query(
+      `SELECT token_hash, user_id, email, expires_at, used, used_at, created_at, ip
+       FROM public.email_verification_tokens
+       WHERE token_hash = $1
+       FOR UPDATE`,
+      [tokenHash]
+    );
+    const row = existingRes.rows[0];
+    if (!row) return { status: 'not_found' as const };
+
+    const mapped: RepoEmailVerificationTokenRecord = {
+      tokenHash: row.token_hash,
+      userId: row.user_id,
+      email: row.email,
+      expiresAt: toMsOrNull(row.expires_at) || 0,
+      used: Boolean(row.used),
+      usedAt: toMsOrNull(row.used_at) || undefined,
+      createdAt: toMsOrNull(row.created_at) || nowMs,
+      ip: row.ip || undefined
+    };
+
+    if (mapped.used) return { status: 'already_used' as const, record: mapped };
+    if (nowMs > mapped.expiresAt) return { status: 'expired' as const, record: mapped };
+
+    await client.query(
+      `UPDATE public.email_verification_tokens
+       SET used = TRUE, used_at = $2
+       WHERE token_hash = $1 AND used = FALSE`,
+      [tokenHash, nowIso]
+    );
+
+    return {
+      status: 'valid' as const,
+      record: { ...mapped, used: true, usedAt: nowMs }
+    };
+  });
+}
+
+export async function createPasswordResetToken(record: RepoResetTokenRecord): Promise<void> {
+  const cleanEmail = record.email.trim().toLowerCase();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  if (!isPostgresEnabled()) {
+    const tokens = readResetTokensJson();
+    const updated = tokens.map(t =>
+      !t.used && (t.email.toLowerCase() === cleanEmail || (record.userId && t.userId === record.userId))
+        ? { ...t, used: true, usedAt: nowMs }
+        : t
+    );
+    updated.unshift({
+      tokenHash: record.tokenHash,
+      userId: record.userId,
+      email: cleanEmail,
+      expiresAt: record.expiresAt,
+      used: false,
+      createdAt: record.createdAt || nowMs,
+      ip: record.ip
+    });
+    if (updated.length > 5000) updated.length = 5000;
+    writeResetTokensJson(updated);
+    return;
+  }
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE public.password_reset_tokens
+       SET used = TRUE, used_at = $1
+       WHERE used = FALSE AND (LOWER(email) = $2 ${record.userId ? 'OR user_id = $3' : ''})`,
+      record.userId ? [nowIso, cleanEmail, record.userId] : [nowIso, cleanEmail]
+    );
+
+    await client.query(
+      `INSERT INTO public.password_reset_tokens (
+        token_hash, user_id, email, expires_at, used, ip, created_at
+      ) VALUES ($1, $2, $3, $4, FALSE, $5, $6)`,
+      [
+        record.tokenHash,
+        record.userId || null,
+        cleanEmail,
+        toIsoOrNull(record.expiresAt) || new Date(nowMs + 30 * 60 * 1000).toISOString(),
+        record.ip || null,
+        toIsoOrNull(record.createdAt) || nowIso
+      ]
+    );
+  });
+}
+
+export async function findResetTokenByHash(tokenHash: string): Promise<RepoResetTokenRecord | undefined> {
+  if (!isPostgresEnabled()) {
+    return readResetTokensJson().find(t => t.tokenHash === tokenHash);
+  }
+  const res = await dbQuery(
+    `SELECT token_hash, user_id, email, expires_at, used, used_at, created_at, ip
+     FROM public.password_reset_tokens
+     WHERE token_hash = $1
+     LIMIT 1`,
+    [tokenHash]
+  );
+  const r = res.rows[0];
+  if (!r) return undefined;
+  return {
+    tokenHash: r.token_hash,
+    userId: r.user_id || undefined,
+    email: r.email,
+    expiresAt: toMsOrNull(r.expires_at) || 0,
+    used: Boolean(r.used),
+    usedAt: toMsOrNull(r.used_at) || undefined,
+    createdAt: toMsOrNull(r.created_at) || Date.now(),
+    ip: r.ip || undefined
+  };
+}
+
+export async function consumePasswordResetToken(
+  tokenHash: string,
+  email: string
+): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  if (!isPostgresEnabled()) {
+    const tokens = readResetTokensJson();
+    const target = tokens.find(t => t.tokenHash === tokenHash);
+    if (!target || target.used || nowMs > target.expiresAt) return false;
+    const updated = tokens.map(t =>
+      t.tokenHash === tokenHash || (!t.used && t.email.toLowerCase() === cleanEmail)
+        ? { ...t, used: true, usedAt: nowMs }
+        : t
+    );
+    writeResetTokensJson(updated);
+    return true;
+  }
+
+  return withTransaction(async (client) => {
+    const res = await client.query(
+      `SELECT token_hash, used, expires_at
+       FROM public.password_reset_tokens
+       WHERE token_hash = $1
+       FOR UPDATE`,
+      [tokenHash]
+    );
+    const row = res.rows[0];
+    if (!row || Boolean(row.used) || nowMs > (toMsOrNull(row.expires_at) || 0)) {
+      return false;
+    }
+
+    await client.query(
+      `UPDATE public.password_reset_tokens
+       SET used = TRUE, used_at = $1
+       WHERE token_hash = $2 OR (used = FALSE AND LOWER(email) = $3)`,
+      [nowIso, tokenHash, cleanEmail]
+    );
+    return true;
+  });
+}
+
+export async function checkDbRateLimit(
+  rateKey: string,
+  maxAttempts = 5,
+  windowMs = 15 * 60 * 1000
+): Promise<boolean> {
+  const nowMs = Date.now();
+  const windowCutoffMs = nowMs - windowMs;
+
+  if (!isPostgresEnabled()) {
+    const all = readRateLimitsJson();
+    const existing = all[rateKey];
+    if (!existing || existing.windowStartedAt < windowCutoffMs) {
+      all[rateKey] = { rateKey, attemptCount: 1, windowStartedAt: nowMs };
+      writeRateLimitsJson(all);
+      return true;
+    }
+    if (existing.attemptCount >= maxAttempts) {
+      return false;
+    }
+    existing.attemptCount += 1;
+    all[rateKey] = existing;
+    writeRateLimitsJson(all);
+    return true;
+  }
+
+  return withTransaction(async (client) => {
+    const res = await client.query(
+      `SELECT rate_key, attempt_count, window_started_at
+       FROM public.auth_rate_limits
+       WHERE rate_key = $1
+       FOR UPDATE`,
+      [rateKey]
+    );
+    const row = res.rows[0];
+    if (!row || (toMsOrNull(row.window_started_at) || 0) < windowCutoffMs) {
+      await client.query(
+        `INSERT INTO public.auth_rate_limits (rate_key, attempt_count, window_started_at, updated_at)
+         VALUES ($1, 1, $2, NOW())
+         ON CONFLICT (rate_key) DO UPDATE SET
+           attempt_count = 1,
+           window_started_at = EXCLUDED.window_started_at,
+           updated_at = NOW()`,
+        [rateKey, new Date(nowMs).toISOString()]
+      );
+      return true;
+    }
+    if (Number(row.attempt_count || 0) >= maxAttempts) {
+      return false;
+    }
+    await client.query(
+      `UPDATE public.auth_rate_limits
+       SET attempt_count = attempt_count + 1, updated_at = NOW()
+       WHERE rate_key = $1`,
+      [rateKey]
+    );
+    return true;
+  });
+}
 
 export async function getVerificationCodes(): Promise<RepoVerificationCodeRecord[]> {
   if (!isPostgresEnabled()) return readVerificationCodesJson();
@@ -870,27 +1196,7 @@ export async function getVerificationCodes(): Promise<RepoVerificationCodeRecord
 export async function saveVerificationCodes(records: RepoVerificationCodeRecord[]): Promise<void> {
   if (!isPostgresEnabled()) {
     writeVerificationCodesJson(records);
-    return;
   }
-  await withTransaction(async (client) => {
-    await client.query('DELETE FROM public.verification_codes');
-    for (const r of records) {
-      await client.query(
-        `INSERT INTO public.verification_codes (email, code, token, expires_at, used, used_at, ip, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          r.email.toLowerCase(),
-          r.code,
-          r.token || null,
-          toIsoOrNull(r.expiresAt) || new Date().toISOString(),
-          Boolean(r.used),
-          toIsoOrNull(r.usedAt),
-          r.ip || null,
-          toIsoOrNull(r.createdAt) || new Date().toISOString()
-        ]
-      );
-    }
-  });
 }
 
 export async function getResetTokens(): Promise<RepoResetTokenRecord[]> {
@@ -898,7 +1204,7 @@ export async function getResetTokens(): Promise<RepoResetTokenRecord[]> {
   const res = await dbQuery('SELECT * FROM public.password_reset_tokens ORDER BY created_at DESC');
   return res.rows.map(r => ({
     tokenHash: r.token_hash,
-    token: r.token_plain || undefined,
+    userId: r.user_id || undefined,
     email: r.email,
     expiresAt: toMsOrNull(r.expires_at) || Date.now(),
     used: Boolean(r.used),
@@ -916,14 +1222,14 @@ export async function saveResetTokens(tokens: RepoResetTokenRecord[]): Promise<v
   await withTransaction(async (client) => {
     for (const t of tokens) {
       await client.query(
-        `INSERT INTO public.password_reset_tokens (token_hash, token_plain, email, expires_at, used, used_at, ip, created_at)
+        `INSERT INTO public.password_reset_tokens (token_hash, user_id, email, expires_at, used, used_at, ip, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (token_hash) DO UPDATE SET
            used = EXCLUDED.used,
            used_at = EXCLUDED.used_at`,
         [
           t.tokenHash,
-          t.token || null,
+          t.userId || null,
           t.email.toLowerCase(),
           toIsoOrNull(t.expiresAt) || new Date().toISOString(),
           Boolean(t.used),

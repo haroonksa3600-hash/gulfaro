@@ -1,44 +1,37 @@
 /**
- * Gulfaro Email Service Configuration (Resend API Production)
- * 
+ * Gulfaro Email Service Configuration (Hostinger SMTP Production)
+ *
  * Configures transactional email delivery for:
- * - Password reset verification links (single-use, 1-hour expiration)
- * - Employer corporate domain email verification (6-digit OTP code)
- * 
- * ACTIVE PROVIDER: Resend API (https://resend.com)
- * 
- * PRODUCTION DOMAIN SETUP:
- * 1. Add your domain in the Resend dashboard: https://resend.com/domains (e.g. gulfaro.com)
- * 2. Add the 3 DNS records provided by Resend to your domain registrar (DKIM, SPF, MX).
- * 3. Once status is "Verified", set:
- *      RESEND_API_KEY="re_..."
- *      RESEND_FROM_EMAIL="Gulfaro Security <security@gulfaro.com>"
- * 4. All registered users across Gmail, Outlook, Yahoo, and corporate domains
- *    will receive emails directly to their personal and work inboxes.
+ * - Account email verification links (single-use, 24-hour expiration)
+ * - Password reset verification links (single-use, 30-minute expiration)
+ * - Welcome emails upon account verification
+ *
+ * OFFICIAL MAILBOX: info@gulfaro.net via Hostinger SMTP (smtp.hostinger.com:465)
  */
 
 export const emailConfig = {
-  // Official support email
-  officialEmail: 'admingulfaro@gmail.com',
+  officialEmail: process.env?.EMAIL_FROM || 'info@gulfaro.net',
+  provider: 'smtp',
 
-  // Active production provider
-  provider: 'resend',
-
-  // Resend API Configuration
-  resend: {
-    apiKey: process.env?.RESEND_API_KEY || '',
-    fromEmail: process.env?.RESEND_FROM_EMAIL || process.env?.EMAIL_FROM || 'Gulfaro <security@gulfaro.com>',
-    replyTo: 'admingulfaro@gmail.com'
+  smtp: {
+    host: process.env?.SMTP_HOST || 'smtp.hostinger.com',
+    port: Number(process.env?.SMTP_PORT) || 465,
+    secure: process.env?.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : true,
+    user: process.env?.SMTP_USER || 'info@gulfaro.net',
+    fromEmail: process.env?.EMAIL_FROM || 'info@gulfaro.net',
+    fromName: process.env?.EMAIL_FROM_NAME || 'Gulfaro',
+    replyTo: process.env?.EMAIL_FROM || 'info@gulfaro.net'
   },
 
-  // Token & OTP expirations
-  tokenExpiryMs: 3600000, // 1 hour (secure single-use)
-  verificationCodeExpiryMs: 900000, // 15 minutes (6-digit OTP)
+  // Token expirations
+  verificationTokenExpiryMs: 24 * 60 * 60 * 1000, // 24 hours
+  resetTokenExpiryMs: 30 * 60 * 1000, // 30 minutes
 
-  // Branding
-  senderName: 'Gulfaro Security',
+  // Branding & subjects
+  senderName: process.env?.EMAIL_FROM_NAME || 'Gulfaro',
+  verificationSubject: 'Verify Your Gulfaro Account',
   resetSubject: 'Reset Your Gulfaro Password',
-  verificationSubject: 'Verify Your Employer Corporate Email - Gul Faro'
+  welcomeSubject: 'Welcome to Gulfaro!'
 };
 
 export default emailConfig;
